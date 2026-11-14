@@ -26,16 +26,22 @@ pub fn apply(ctx: &egui::Context) {
     visuals.hyperlink_color = TEAL;
     visuals.widgets.noninteractive.bg_fill = PANEL;
     visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, MUTED);
+    visuals.widgets.noninteractive.corner_radius = CornerRadius::same(8);
     visuals.widgets.inactive.bg_fill = PANEL_ALT;
     visuals.widgets.inactive.weak_bg_fill = PANEL_ALT;
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, LINE);
+    visuals.widgets.inactive.corner_radius = CornerRadius::same(8);
     visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, TEXT);
     visuals.widgets.hovered.bg_fill = Color32::from_rgb(30, 37, 48);
     visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(30, 37, 48);
+    visuals.widgets.hovered.corner_radius = CornerRadius::same(8);
     visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::WHITE);
     visuals.widgets.active.bg_fill = Color32::from_rgb(38, 46, 59);
     visuals.widgets.active.weak_bg_fill = Color32::from_rgb(38, 46, 59);
+    visuals.widgets.active.corner_radius = CornerRadius::same(8);
     visuals.widgets.active.fg_stroke = Stroke::new(1.0, Color32::WHITE);
     visuals.widgets.open.bg_fill = PANEL_ALT;
+    visuals.widgets.open.corner_radius = CornerRadius::same(8);
     visuals.window_corner_radius = CornerRadius::same(14);
     visuals.menu_corner_radius = CornerRadius::same(12);
     visuals.window_stroke = Stroke::new(1.0, LINE);
@@ -43,7 +49,7 @@ pub fn apply(ctx: &egui::Context) {
 
     let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
     style.spacing.item_spacing = Vec2::new(8.0, 6.0);
-    style.spacing.button_padding = Vec2::new(9.0, 5.0);
+    style.spacing.button_padding = Vec2::new(10.0, 6.0);
     style.spacing.interact_size = Vec2::new(30.0, 26.0);
     style.spacing.scroll.bar_width = 8.0;
     style.spacing.scroll.floating = true;

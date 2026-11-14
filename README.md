@@ -57,13 +57,23 @@ ferrox --check-update
 
 ## Download & Install
 
-**Windows (recommended):** Download `ferrox-windows-x86_64.zip`, extract it, and run `ferrox.exe`. No installer is needed — Ferrox is a portable standalone browser.
+**Windows installer:** Run `Ferrox-Setup-...-x86_64.exe`; it installs the Microsoft Edge WebView2 Runtime when needed.
 
-1. Download the latest `ferrox-windows-x86_64.zip` from the [Releases page](https://github.com/Ahmaddragon11/ferrox/releases).
+**Portable ZIP:** Install the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) first if it is not already present.
+
+Release assets include SHA-256 checksum files for the Windows installer and portable ZIP. Verify either download with:
+
+```powershell
+CertUtil -hashfile .\Ferrox-Setup-<VERSION>-x86_64.exe SHA256
+```
+
+Compare the result with `Ferrox-Setup-<VERSION>-x86_64.exe.sha256`.
+
+1. Download the latest `ferrox-windows-x86_64-<VERSION>.zip` from the [Releases page](https://github.com/Ahmaddragon11/ferrox/releases).
 2. Verify the checksum:
    ```powershell
-   CertUtil -hashfile ferrox-windows-x86_64.zip SHA256
-   # compare with the value in ferrox-windows-x86_64.zip.sha256
+   CertUtil -hashfile ferrox-windows-x86_64-<VERSION>.zip SHA256
+   # compare with the value in ferrox-windows-x86_64-<VERSION>.zip.sha256
    ```
 3. Extract the ZIP to any folder (e.g. `C:\Apps\Ferrox`).
 4. Double-click `ferrox.exe` to launch.

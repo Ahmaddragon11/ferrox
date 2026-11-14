@@ -103,30 +103,46 @@ jobs:
       - name: Install NSIS (for .exe installer)
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Continue"
-          if (!(Get-Command makensis -ErrorAction SilentlyContinue)) {
+          $ErrorActionPreference = "Stop"
+          $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue
+          if (!$makensis) {
             Write-Host "Installing NSIS from SourceForge..."
             $nsisUrl = "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09-setup.exe/download"
             $nsisInstaller = "$env:TEMP\nsis-setup.exe"
             Invoke-WebRequest -Uri $nsisUrl -OutFile $nsisInstaller
-            Start-Process -FilePath $nsisInstaller -ArgumentList "/S" -Wait
-            Write-Host "NSIS installed"
-          } else {
-            Write-Host "NSIS already available"
+            $process = Start-Process -FilePath $nsisInstaller -ArgumentList "/S" -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "NSIS setup failed (exit code $($process.ExitCode))" }
           }
+          $candidates = @(
+            (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source,
+            "$env:ProgramFiles\NSIS\makensis.exe",
+            "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          ) | Where-Object { $_ -and (Test-Path $_) }
+          if (!$candidates) { throw "NSIS installation completed but makensis.exe could not be found" }
+          Add-Content -Path $env:GITHUB_ENV -Value "MAKENSIS_PATH=$($candidates[0])"
 
       - name: Prepare NSIS installer script
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           $version = if ($env:FERROX_VERSION) { $env:FERROX_VERSION } else { "0.2.0-$($env:GITHUB_SHA.Substring(0,7))" }
           $installerName = "Ferrox-Setup-${version}-x86_64.exe"
-          $exePath = "target\\x86_64-pc-windows-msvc\\release\\ferrox.exe"
+          $releaseDir = "target/x86_64-pc-windows-msvc/release"
+          $exePath = Join-Path $releaseDir "ferrox.exe"
+          $webView2Path = Join-Path $releaseDir "MicrosoftEdgeWebview2Setup.exe"
+          $iconPath = Join-Path $releaseDir "ferrox.ico"
+          Copy-Item ".github/installer/ferrox.ico" $iconPath
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $webView2Path
+          if (!(Test-Path $exePath)) { throw "Ferrox executable was not found: $exePath" }
+          if ((Get-Item $webView2Path).Length -lt 100KB) { throw "WebView2 bootstrapper download is missing or incomplete" }
 
-          Copy-Item ".github\\installer\\ferrox.nsi" "ferrox-installer.nsi"
+          Copy-Item ".github/installer/ferrox.nsi" "ferrox-installer.nsi"
           (Get-Content "ferrox-installer.nsi" -Raw) `
             -replace "@VERSION@", $version `
             -replace "@INSTALLER_NAME@", $installerName `
             -replace "@EXE_PATH@", $exePath `
+            -replace "@WEBVIEW2_PATH@", $webView2Path `
+            -replace "@ICON_PATH@", $iconPath `
             | Set-Content "ferrox-installer.nsi" -Encoding ASCII
 
           Write-Host "NSIS script prepared: ferrox-installer.nsi"
@@ -135,40 +151,53 @@ jobs:
       - name: Build NSIS installer (.exe)
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Continue"
+          $ErrorActionPreference = "Stop"
           $version = if ($env:FERROX_VERSION) { $env:FERROX_VERSION } else { "0.2.0-$($env:GITHUB_SHA.Substring(0,7))" }
           $installerName = "Ferrox-Setup-${version}-x86_64.exe"
 
           Write-Host "Building NSIS installer: $installerName"
-          $makensisPath = Get-Command makensis -ErrorAction SilentlyContinue
-          if ($makensisPath) {
-            & makensis.exe "/V1" "ferrox-installer.nsi"
-            if (Test-Path $installerName) {
-              Move-Item -Force $installerName "target/x86_64-pc-windows-msvc/release/$installerName"
-              Write-Host "Installer built successfully: $installerName"
-            } else {
-              Write-Host "Installer build failed, falling back to ZIP only"
-            }
-          } else {
-            Write-Host "makensis not found, falling back to ZIP only"
-          }
+          if (!(Test-Path $env:MAKENSIS_PATH)) { throw "makensis.exe was not installed" }
+          & $env:MAKENSIS_PATH "/V1" "ferrox-installer.nsi"
+          if ($LASTEXITCODE -ne 0) { throw "NSIS failed to build the installer (exit code $LASTEXITCODE)" }
+          if (!(Test-Path $installerName)) { throw "NSIS did not create $installerName" }
+          $installerPath = "target/x86_64-pc-windows-msvc/release/$installerName"
+          Move-Item -Force $installerName $installerPath
+          $hash = (Get-FileHash $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $installerName" | Out-File "$($installerPath).sha256" -Encoding ascii
+          Write-Host "Installer built successfully and checksum saved: $installerPath"
 
       - name: Create portable Windows ZIP
         shell: pwsh
         run: |
           $version = if ($env:FERROX_VERSION) { $env:FERROX_VERSION } else { "0.2.0-$($env:GITHUB_SHA.Substring(0,7))" }
           $zipName = "ferrox-windows-x86_64-${version}.zip"
-          Compress-Archive -Path "target/x86_64-pc-windows-msvc/release/ferrox.exe" -DestinationPath "target/x86_64-pc-windows-msvc/release/$zipName" -Force
-          $hash = (Get-FileHash "target/x86_64-pc-windows-msvc/release/ferrox.exe" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $zipName" | Out-File "target/x86_64-pc-windows-msvc/release/$zipName.sha256"
-          "$hash  ferrox.exe" | Out-File "target/x86_64-pc-windows-msvc/release/ferrox.exe.sha256"
+          $releaseDir = "target/x86_64-pc-windows-msvc/release"
+          $zipPath = Join-Path $releaseDir $zipName
+          $exePath = Join-Path $releaseDir "ferrox.exe"
+          Compress-Archive -Path $exePath -DestinationPath $zipPath -Force
+          $zipHash = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $exeHash = (Get-FileHash $exePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$zipHash  $zipName" | Out-File "$($zipPath).sha256" -Encoding ascii
+          "$exeHash  ferrox.exe" | Out-File "$($exePath).sha256" -Encoding ascii
           Write-Host "Built $zipName ($([math]::Round((Get-Item "target\x86_64-pc-windows-msvc\release\ferrox.exe").Length / 1MB, 2)) MB)"
 
       - name: Verify Windows artifacts
         shell: pwsh
         run: |
-          $exePath = "target\x86_64-pc-windows-msvc\release\ferrox.exe"
-          if (!(Test-Path $exePath)) { throw "Windows binary not found!" }
+          $version = if ($env:FERROX_VERSION) { $env:FERROX_VERSION } else { "0.2.0-$($env:GITHUB_SHA.Substring(0,7))" }
+          $releaseDir = "target/x86_64-pc-windows-msvc/release"
+          $artifacts = @(
+            @{ Path = (Join-Path $releaseDir "ferrox.exe"); Checksum = (Join-Path $releaseDir "ferrox.exe.sha256"); Name = "ferrox.exe" },
+            @{ Path = (Join-Path $releaseDir "ferrox-windows-x86_64-$version.zip"); Checksum = (Join-Path $releaseDir "ferrox-windows-x86_64-$version.zip.sha256"); Name = "Windows portable ZIP" },
+            @{ Path = (Join-Path $releaseDir "Ferrox-Setup-$version-x86_64.exe"); Checksum = (Join-Path $releaseDir "Ferrox-Setup-$version-x86_64.exe.sha256"); Name = "Windows installer" }
+          )
+          foreach ($artifact in $artifacts) {
+            if (!(Test-Path $artifact.Path)) { throw "$($artifact.Name) was not found: $($artifact.Path)" }
+            if (!(Test-Path $artifact.Checksum)) { throw "$($artifact.Name) checksum was not found: $($artifact.Checksum)" }
+            $expected = (Get-Content $artifact.Checksum -Raw).Trim().Split()[0]
+            $actual = (Get-FileHash $artifact.Path -Algorithm SHA256).Hash
+            if ($actual -ine $expected) { throw "$($artifact.Name) SHA-256 mismatch" }
+          }
           Write-Host "Windows artifacts verified OK"
 
       - name: Upload Windows artifacts
@@ -181,6 +210,7 @@ jobs:
             target/x86_64-pc-windows-msvc/release/*.zip
             target/x86_64-pc-windows-msvc/release/*.zip.sha256
             target/x86_64-pc-windows-msvc/release/Ferrox-Setup-*.exe
+            target/x86_64-pc-windows-msvc/release/Ferrox-Setup-*.exe.sha256
           retention-days: 30
 
   # =======================================================================
@@ -318,6 +348,7 @@ jobs:
             artifacts/windows/ferrox.exe
             artifacts/windows/ferrox.exe.sha256
             artifacts/windows/Ferrox-Setup-*.exe
+            artifacts/windows/Ferrox-Setup-*.exe.sha256
             artifacts/windows/*.zip
             artifacts/windows/*.zip.sha256
             artifacts/linux/ferrox-linux-x86_64*.tar.gz

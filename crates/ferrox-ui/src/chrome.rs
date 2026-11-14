@@ -200,6 +200,7 @@ pub fn draw(ctx: &egui::Context, state: &mut ChromeState) -> Option<ChromeAction
 
     let frame = egui::Frame {
         fill: theme::BG,
+        stroke: egui::Stroke::new(1.0, theme::LINE),
         ..Default::default()
     };
 
@@ -263,7 +264,7 @@ pub fn draw(ctx: &egui::Context, state: &mut ChromeState) -> Option<ChromeAction
                                                     theme::PANEL
                                                 })
                                                 .stroke(if selected {
-                                                    egui::Stroke::new(1.0, theme::LINE)
+                                                    egui::Stroke::new(1.0, theme::ACCENT)
                                                 } else {
                                                     egui::Stroke::NONE
                                                 })
@@ -366,7 +367,7 @@ pub fn draw(ctx: &egui::Context, state: &mut ChromeState) -> Option<ChromeAction
                     {
                         action = Some(ChromeAction::Forward);
                     }
-                    let reload = if state.loading { "×" } else { "⟳" };
+                    let reload = if state.loading { "◌" } else { "⟳" };
                     if ui
                         .add(egui::Button::new(reload).frame(false))
                         .on_hover_text("Reload")
@@ -455,7 +456,11 @@ pub fn draw(ctx: &egui::Context, state: &mut ChromeState) -> Option<ChromeAction
                     if ui
                         .add(
                             egui::Button::new(shield_text)
-                                .fill(theme::PANEL)
+                                .fill(if state.shield_enabled {
+                                    Color32::from_rgb(15, 42, 42)
+                                } else {
+                                    theme::PANEL
+                                })
                                 .stroke(egui::Stroke::new(1.0, theme::LINE)),
                         )
                         .on_hover_text("Toggle tracker & ad shielding")
@@ -708,85 +713,99 @@ pub fn draw(ctx: &egui::Context, state: &mut ChromeState) -> Option<ChromeAction
                     egui::vec2(ui.available_width(), MENU_H),
                     Layout::left_to_right(Align::Center),
                     |ui| {
-                        ui.spacing_mut().item_spacing.x = 6.0;
-                        let items = [
-                            ("History", "ferrox://history"),
-                            ("Bookmarks", "ferrox://bookmarks"),
-                            ("Downloads", "ferrox://downloads"),
-                            ("Profiler", "ferrox://profiler"),
-                            ("Updates", "ferrox://updates"),
-                            ("Settings", "ferrox://settings"),
-                        ];
-                        for (label, url) in items {
-                            if ui.button(label).clicked() {
-                                state.menu_open = false;
-                                action = Some(ChromeAction::OpenInternal(url.to_string()));
-                            }
-                        }
-                        ui.separator();
-                        if ui
-                            .button(if state.incognito {
-                                "Leave Incognito"
-                            } else {
-                                "Incognito"
-                            })
-                            .clicked()
-                        {
-                            action = Some(ChromeAction::ToggleIncognito);
-                        }
-                        if ui
-                            .add(egui::Button::new("\u{1f50d}").frame(false))
-                            .on_hover_text("Find in page (Ctrl+F)")
-                            .clicked()
-                        {
-                            state.menu_open = false;
-                            action = Some(ChromeAction::Find);
-                        }
-                        if ui
-                            .add(egui::Button::new("\u{2212}").frame(false))
-                            .on_hover_text("Zoom out (Ctrl+-)")
-                            .clicked()
-                        {
-                            action = Some(ChromeAction::ZoomOut);
-                        }
-                        if ui
-                            .add(egui::Button::new("+").frame(false))
-                            .on_hover_text("Zoom in (Ctrl+=)")
-                            .clicked()
-                        {
-                            action = Some(ChromeAction::ZoomIn);
-                        }
-                        if ui
-                            .add(egui::Button::new("1:1").frame(false))
-                            .on_hover_text("Reset zoom (Ctrl+0)")
-                            .clicked()
-                        {
-                            action = Some(ChromeAction::ZoomReset);
-                        }
-                        if ui
-                            .add(egui::Button::new("</>").frame(false))
-                            .on_hover_text("View the source of this page")
-                            .clicked()
-                        {
-                            state.menu_open = false;
-                            action = Some(ChromeAction::ViewSource);
-                        }
-                        if ui
-                            .add(egui::Button::new("Dev").frame(false))
-                            .on_hover_text("Open the developer tools")
-                            .clicked()
-                        {
-                            state.menu_open = false;
-                            action = Some(ChromeAction::DevTools);
-                        }
-                        if ui.button("Check updates").clicked() {
-                            action = Some(ChromeAction::CheckUpdates);
-                        }
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui.button("Quit").clicked() {
-                                action = Some(ChromeAction::Quit);
-                            }
-                        });
+                        egui::ScrollArea::horizontal()
+                            .id_salt("ferrox_menu_scroll")
+                            .scroll_bar_visibility(
+                                egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                            )
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                    let items = [
+                                        ("History", "ferrox://history"),
+                                        ("Bookmarks", "ferrox://bookmarks"),
+                                        ("Downloads", "ferrox://downloads"),
+                                        ("Profiler", "ferrox://profiler"),
+                                        ("Updates", "ferrox://updates"),
+                                        ("Settings", "ferrox://settings"),
+                                    ];
+                                    for (label, url) in items {
+                                        if ui.button(label).clicked() {
+                                            state.menu_open = false;
+                                            action =
+                                                Some(ChromeAction::OpenInternal(url.to_string()));
+                                        }
+                                    }
+                                    ui.separator();
+                                    if ui
+                                        .button(if state.incognito {
+                                            "Leave Incognito"
+                                        } else {
+                                            "Incognito"
+                                        })
+                                        .clicked()
+                                    {
+                                        state.menu_open = false;
+                                        action = Some(ChromeAction::ToggleIncognito);
+                                    }
+                                    if ui
+                                        .add(egui::Button::new("\u{1f50d}").frame(false))
+                                        .on_hover_text("Find in page (Ctrl+F)")
+                                        .clicked()
+                                    {
+                                        state.menu_open = false;
+                                        action = Some(ChromeAction::Find);
+                                    }
+                                    if ui
+                                        .add(egui::Button::new("\u{2212}").frame(false))
+                                        .on_hover_text("Zoom out (Ctrl+-)")
+                                        .clicked()
+                                    {
+                                        state.menu_open = false;
+                                        action = Some(ChromeAction::ZoomOut);
+                                    }
+                                    if ui
+                                        .add(egui::Button::new("+").frame(false))
+                                        .on_hover_text("Zoom in (Ctrl+=)")
+                                        .clicked()
+                                    {
+                                        state.menu_open = false;
+                                        action = Some(ChromeAction::ZoomIn);
+                                    }
+                                    if ui
+                                        .add(egui::Button::new("1:1").frame(false))
+                                        .on_hover_text("Reset zoom (Ctrl+0)")
+                                        .clicked()
+                                    {
+                                        state.menu_open = false;
+                                        action = Some(ChromeAction::ZoomReset);
+                                    }
+                                    if ui
+                                        .add(egui::Button::new("</>").frame(false))
+                                        .on_hover_text("View the source of this page")
+                                        .clicked()
+                                    {
+                                        state.menu_open = false;
+                                        action = Some(ChromeAction::ViewSource);
+                                    }
+                                    if ui
+                                        .add(egui::Button::new("Dev").frame(false))
+                                        .on_hover_text("Open the developer tools")
+                                        .clicked()
+                                    {
+                                        state.menu_open = false;
+                                        action = Some(ChromeAction::DevTools);
+                                    }
+                                    if ui.button("Check updates").clicked() {
+                                        state.menu_open = false;
+                                        action = Some(ChromeAction::CheckUpdates);
+                                    }
+                                    if ui.button("Quit").clicked() {
+                                        state.menu_open = false;
+                                        action = Some(ChromeAction::Quit);
+                                    }
+                                });
+                            });
                     },
                 );
             }

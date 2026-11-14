@@ -12,6 +12,19 @@ use std::sync::Arc;
 use crate::app::FerroxApp;
 
 impl FerroxApp {
+    fn report_view_error(&mut self, tab_id: ferrox_core::TabId, err: &impl std::fmt::Display) {
+        tracing::error!("failed to initialize browser page: {err}");
+        if let Some(tab) = self.tabs.find_mut(tab_id) {
+            tab.loading = false;
+        }
+        #[cfg(windows)]
+        self.status(format!(
+            "Could not open page: {err}. Install the Microsoft Edge WebView2 Runtime and restart Ferrox."
+        ));
+        #[cfg(not(windows))]
+        self.status(format!("Could not open page: {err}"));
+    }
+
     pub(crate) fn sync_chrome(&mut self) {
         self.chrome.tabs = self
             .tabs
@@ -248,7 +261,7 @@ impl FerroxApp {
             self.turbo_stack.remove(&tab_id);
             let html = render_internal(&url, &self.internal_context(None));
             if let Err(err) = self.ensure_view(tab_id, &window, mode, "about:blank") {
-                tracing::error!("view error: {err}");
+                self.report_view_error(tab_id, &err);
                 return;
             }
             self.load_html(tab_id, &url, html);
@@ -265,7 +278,7 @@ impl FerroxApp {
         self.turbo_current.remove(&tab_id);
         self.turbo_stack.remove(&tab_id);
         if let Err(err) = self.ensure_view(tab_id, &window, mode, &url) {
-            tracing::error!("view error: {err}");
+            self.report_view_error(tab_id, &err);
             return;
         }
         if self.engine.current_url(tab_id).as_deref() != Some(url.as_str())
@@ -317,7 +330,7 @@ impl FerroxApp {
         html: String,
     ) {
         if let Err(err) = self.engine.load_html(tab_id, &html) {
-            tracing::error!("load_html error: {err}");
+            self.report_view_error(tab_id, &err);
             return;
         }
         if let Some(tab) = self.tabs.find_mut(tab_id) {
@@ -337,11 +350,14 @@ impl FerroxApp {
             return;
         };
         if let Err(err) = self.ensure_view(tab_id, &window, ComputeMode::Turbo, "about:blank") {
-            tracing::error!("view error: {err}");
+            self.report_view_error(tab_id, &err);
             return;
         }
         let loading_html = turbo_loading_page(&url, &self.version);
-        let _ = self.engine.load_html(tab_id, &loading_html);
+        if let Err(err) = self.engine.load_html(tab_id, &loading_html) {
+            self.report_view_error(tab_id, &err);
+            return;
+        }
 
         if push_history {
             let stack = self.turbo_stack.entry(tab_id).or_default();

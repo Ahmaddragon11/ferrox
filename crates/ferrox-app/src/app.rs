@@ -1592,9 +1592,15 @@ impl ApplicationHandler<AppEvent> for FerroxApp {
         self.window = Some(window.clone());
         self.chrome.memory_mb = 42.0;
 
+        let wgpu_config = egui_wgpu::WgpuConfiguration {
+            wgpu_setup: egui_wgpu::WgpuSetup::from_display_handle(
+                event_loop.owned_display_handle(),
+            ),
+            ..Default::default()
+        };
         let mut painter = self.runtime.block_on(egui_wgpu::winit::Painter::new(
             self.egui_ctx.clone(),
-            egui_wgpu::WgpuConfiguration::default(),
+            wgpu_config,
             false,
             egui_wgpu::RendererOptions::default(),
         ));
