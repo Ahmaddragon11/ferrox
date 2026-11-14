@@ -100,6 +100,51 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target x86_64-pc-windows-msvc -p ferrox-app
 
+      - name: Install NSIS (for .exe installer)
+        shell: pwsh
+        run: |
+          if (!(Get-Command makensis -ErrorAction SilentlyContinue)) {
+            Write-Host "Installing NSIS via Chocolatey..."
+            Set-ExecutionPolicy Bypass -Scope Process -Force
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+            choco install nsis -y --no-progress
+          }
+
+      - name: Prepare NSIS installer script
+        shell: pwsh
+        run: |
+          $version = if ($env:FERROX_VERSION) { $env:FERROX_VERSION } else { "0.2.0-$($env:GITHUB_SHA.Substring(0,7))" }
+          $installerName = "Ferrox-Setup-${version}-x86_64.exe"
+          $exePath = "target\x86_64-pc-windows-msvc\release\ferrox.exe"
+
+          Copy-Item ".github\installer\ferrox.nsi" "ferrox-installer.nsi"
+          (Get-Content "ferrox-installer.nsi" -Raw) `
+            -replace "@VERSION@", $version `
+            -replace "@INSTALLER_NAME@", $installerName `
+            -replace "@EXE_PATH@", $exePath `
+            | Set-Content "ferrox-installer.nsi" -Encoding ASCII
+
+          Write-Host "NSIS script prepared: ferrox-installer.nsi"
+          Write-Host "Installer will be: $installerName"
+
+      - name: Build NSIS installer (.exe)
+        shell: pwsh
+        run: |
+          $version = if ($env:FERROX_VERSION) { $env:FERROX_VERSION } else { "0.2.0-$($env:GITHUB_SHA.Substring(0,7))" }
+          $installerName = "Ferrox-Setup-${version}-x86_64.exe"
+
+          Write-Host "Building NSIS installer: $installerName"
+          & makensis.exe "/V1" "ferrox-installer.nsi"
+
+          if (Test-Path $installerName) {
+            Move-Item -Force $installerName "target/x86_64-pc-windows-msvc/release/$installerName"
+            Write-Host "Installer built successfully: $installerName"
+          } else {
+            Write-Host "Installer build failed"
+            Get-ChildItem -Filter "*.exe" | ForEach-Object { Write-Host $_.Name }
+          }
+
       - name: Create portable Windows ZIP
         shell: pwsh
         run: |
@@ -127,6 +172,7 @@ jobs:
             target/x86_64-pc-windows-msvc/release/ferrox.exe.sha256
             target/x86_64-pc-windows-msvc/release/*.zip
             target/x86_64-pc-windows-msvc/release/*.zip.sha256
+            target/x86_64-pc-windows-msvc/release/Ferrox-Setup-*.exe
           retention-days: 30
 
   # =======================================================================
@@ -250,6 +296,7 @@ jobs:
 
             ### التحميلات
 
+            - **Windows (Installer):** `Ferrox-Setup-${{ steps.metadata.outputs.version }}-x86_64.exe` (تثبيت سريع ومباشر)
             - **Windows (Portable):** `ferrox-windows-x86_64-${{ steps.metadata.outputs.version }}.zip` (استخرج وشغّل)
             - **Linux (Portable):** `ferrox-linux-x86_64-${{ steps.metadata.outputs.version }}.tar.gz` (استخرج وشغّل)
 
@@ -262,6 +309,7 @@ jobs:
           files: |
             artifacts/windows/ferrox.exe
             artifacts/windows/ferrox.exe.sha256
+            artifacts/windows/Ferrox-Setup-*.exe
             artifacts/windows/*.zip
             artifacts/windows/*.zip.sha256
             artifacts/linux/ferrox-linux-x86_64*.tar.gz
