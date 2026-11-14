@@ -190,12 +190,12 @@ jobs:
           retention-days: 30
 
   # =======================================================================
-  # JOB 4: Publish Release (only for tags or manual)
+  # JOB 4: Publish Release (auto on every push + tags)
   # =======================================================================
   publish-release:
     name: Publish Release
     needs: [build-windows, build-linux]
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -219,12 +219,15 @@ jobs:
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VERSION="${{ github.ref_name }}"
             IS_TAG="true"
+            CHANNEL="stable"
           else
-            VERSION="0.2.0-${{ github.sha }}"
+            VERSION="nightly-${{ github.sha }}"
             IS_TAG="false"
+            CHANNEL="nightly"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "is_tag=${IS_TAG}" >> "$GITHUB_OUTPUT"
+          echo "channel=${CHANNEL}" >> "$GITHUB_OUTPUT"
 
       - name: Verify artifacts before publishing
         shell: bash
@@ -238,22 +241,22 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.metadata.outputs.version }}
-          name: Ferrox Browser ${{ steps.metadata.outputs.version }}
+          tag_name: ${{ steps.metadata.outputs.version }}
+          name: Ferrox Browser ${{ steps.metadata.outputs.version }} (${{ steps.metadata.outputs.channel }})
           body: |
-            ## 🚀 Ferrox Browser ${{ steps.metadata.outputs.version }}
+            ## 🚀 Ferrox Browser ${{ steps.metadata.outputs.version }} (${{ steps.metadata.outputs.channel }})
 
             **متصفح ويب سريع مكتوب بـ Rust** - عالي السرعة، منخفض الذاكرة، يركز على الخصوصية
 
             ### التحميلات
 
-            - **Windows (Installer):** `Ferrox-Setup-${{ steps.metadata.outputs.version }}-x86_64.exe` (تثبيت آلي)
-            - **Windows (Portable):** `ferrox-windows-x86_64-${{ steps.metadata.outputs.version }}.zip` (لا يحتاج تثبيت)
+            - **Windows (Portable):** `ferrox-windows-x86_64-${{ steps.metadata.outputs.version }}.zip` (استخرج وشغّل)
             - **Linux (Portable):** `ferrox-linux-x86_64-${{ steps.metadata.outputs.version }}.tar.gz` (استخرج وشغّل)
 
             ### ملاحظات
-            - تم البناء تلقائياً من GitHub Actions.
+            - تم البناء تلقائياً من GitHub Actions عند كل push.
             - تحقق من ملفات SHA256 قبل التثبيت.
+            - القناة: ${{ steps.metadata.outputs.channel }}
           draft: false
           prerelease: ${{ steps.metadata.outputs.is_tag == 'false' }}
           files: |
