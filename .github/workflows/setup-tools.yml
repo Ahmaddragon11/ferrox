@@ -1,0 +1,20 @@
+# =============================================================================
+# Setup tools - install NSIS & other build tools
+# =============================================================================
+name: Setup Tools
+
+on:
+  workflow_call:
+
+jobs:
+  setup:
+    name: Install build tools
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install NSIS
+        uses: jfmeira06/setup-nsis@v1
+        with:
+          nsis-version: "3.08"
+
+      - name: Verify NSIS
+        run: makensis /Version
