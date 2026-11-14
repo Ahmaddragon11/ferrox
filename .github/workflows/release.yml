@@ -202,7 +202,7 @@ jobs:
           $exePath = "target\x86_64-pc-windows-msvc\release\ferrox.exe"
           if (!(Test-Path $exePath)) { throw "Windows binary not found!" }
           $exeHash = (Get-FileHash $exePath -Algorithm SHA256).Hash.ToLower()
-          $expected = (Get-Content "target\x86_64-pc-windows-msvc\release\ferrox.exe.sha256" | Select-Object -First 1).Split(' ')[0]
+          $expected = (Get-Content "target\x86_64-pc-windows-msvc\release\ferrox.exe.sha256" -Raw).Trim().Split(' ')[0].Trim()
           if ($exeHash -ne $expected) { throw "EXE hash mismatch!" }
           Write-Host "Windows artifacts verified OK"
 
@@ -371,7 +371,7 @@ jobs:
             ### ملاحظات
             - تم البناء تلقائياً من GitHub Actions.
             - تحقق من ملفات SHA256 قبل التثبيت.
-            - ${IS_TAG}==true && 'تم التحقق من التوقيع Ed25519' || 'SHA256 checksums only'}
+            - ${{ steps.metadata.outputs.is_tag == 'true' && 'تم التحقق من التوقيع Ed25519' || 'SHA256 checksums only' }}
           draft: false
           prerelease: ${{ steps.metadata.outputs.is_tag == 'false' }}
           files: |
