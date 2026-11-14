@@ -19,6 +19,7 @@
 - **Signed Auto-Updater & Release Channels (`ferrox-updater`):**
   - SemVer versioning, `stable` / `beta` / `nightly` channels, `Ed25519` + `SHA-256` verification, and atomic binary replacement (`self-replace`).
 
+
 ## Browser Features
 
 | Feature | How to use it |
