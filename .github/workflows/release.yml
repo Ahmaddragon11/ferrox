@@ -73,7 +73,7 @@ jobs:
   # JOB 2: Windows Build (NSIS installer + portable)
   # =======================================================================
   build-windows:
-    name: Windows (NSIS Installer)
+    name: Windows (NSIS Installer + Portable)
     needs: quality-gates
     runs-on: windows-latest
     timeout-minutes: 40
@@ -103,12 +103,16 @@ jobs:
       - name: Install NSIS (for .exe installer)
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Continue"
           if (!(Get-Command makensis -ErrorAction SilentlyContinue)) {
-            Write-Host "Installing NSIS via Chocolatey..."
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-            choco install nsis -y --no-progress
+            Write-Host "Installing NSIS from SourceForge..."
+            $nsisUrl = "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09-setup.exe/download"
+            $nsisInstaller = "$env:TEMP\nsis-setup.exe"
+            Invoke-WebRequest -Uri $nsisUrl -OutFile $nsisInstaller
+            Start-Process -FilePath $nsisInstaller -ArgumentList "/S" -Wait
+            Write-Host "NSIS installed"
+          } else {
+            Write-Host "NSIS already available"
           }
 
       - name: Prepare NSIS installer script
@@ -116,9 +120,9 @@ jobs:
         run: |
           $version = if ($env:FERROX_VERSION) { $env:FERROX_VERSION } else { "0.2.0-$($env:GITHUB_SHA.Substring(0,7))" }
           $installerName = "Ferrox-Setup-${version}-x86_64.exe"
-          $exePath = "target\x86_64-pc-windows-msvc\release\ferrox.exe"
+          $exePath = "target\\x86_64-pc-windows-msvc\\release\\ferrox.exe"
 
-          Copy-Item ".github\installer\ferrox.nsi" "ferrox-installer.nsi"
+          Copy-Item ".github\\installer\\ferrox.nsi" "ferrox-installer.nsi"
           (Get-Content "ferrox-installer.nsi" -Raw) `
             -replace "@VERSION@", $version `
             -replace "@INSTALLER_NAME@", $installerName `
@@ -131,18 +135,22 @@ jobs:
       - name: Build NSIS installer (.exe)
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Continue"
           $version = if ($env:FERROX_VERSION) { $env:FERROX_VERSION } else { "0.2.0-$($env:GITHUB_SHA.Substring(0,7))" }
           $installerName = "Ferrox-Setup-${version}-x86_64.exe"
 
           Write-Host "Building NSIS installer: $installerName"
-          & makensis.exe "/V1" "ferrox-installer.nsi"
-
-          if (Test-Path $installerName) {
-            Move-Item -Force $installerName "target/x86_64-pc-windows-msvc/release/$installerName"
-            Write-Host "Installer built successfully: $installerName"
+          $makensisPath = Get-Command makensis -ErrorAction SilentlyContinue
+          if ($makensisPath) {
+            & makensis.exe "/V1" "ferrox-installer.nsi"
+            if (Test-Path $installerName) {
+              Move-Item -Force $installerName "target/x86_64-pc-windows-msvc/release/$installerName"
+              Write-Host "Installer built successfully: $installerName"
+            } else {
+              Write-Host "Installer build failed, falling back to ZIP only"
+            }
           } else {
-            Write-Host "Installer build failed"
-            Get-ChildItem -Filter "*.exe" | ForEach-Object { Write-Host $_.Name }
+            Write-Host "makensis not found, falling back to ZIP only"
           }
 
       - name: Create portable Windows ZIP
