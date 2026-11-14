@@ -70,10 +70,10 @@ jobs:
         run: cargo test --workspace --release
 
   # =======================================================================
-  # JOB 2: Windows Build (NSIS installer + portable)
+  # JOB 2: Windows Build (portable executable)
   # =======================================================================
   build-windows:
-    name: Windows (NSIS Installer + Portable)
+    name: Windows (Portable)
     needs: quality-gates
     runs-on: windows-latest
     timeout-minutes: 40
@@ -100,90 +100,6 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target x86_64-pc-windows-msvc -p ferrox-app
 
-      - name: Install NSIS (for .exe installer)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $nsisUrls = @(
-            "https://pilotfiber.dl.sourceforge.net/project/nsis/NSIS%203/3.09/nsis-3.09.zip",
-            "https://phoenixnap.dl.sourceforge.net/project/nsis/NSIS%203/3.09/nsis-3.09.zip"
-          )
-          $nsisZip = Join-Path $env:RUNNER_TEMP "nsis-3.09.zip"
-          $nsisRoot = Join-Path $env:RUNNER_TEMP "nsis-3.09"
-          $expectedSha256 = "f5dc52eef1f3884230520199bac6f36b82d643d86b003ce51bd24b05c6ba7c91"
-          $downloaded = $false
-
-          foreach ($nsisUrl in $nsisUrls) {
-            try {
-              Invoke-WebRequest -Uri $nsisUrl -OutFile $nsisZip
-              $actualSha256 = (Get-FileHash $nsisZip -Algorithm SHA256).Hash
-              if ($actualSha256 -ine $expectedSha256) {
-                throw "NSIS archive SHA-256 mismatch (got $actualSha256)"
-              }
-              $downloaded = $true
-              break
-            } catch {
-              Remove-Item $nsisZip -Force -ErrorAction SilentlyContinue
-              Write-Warning "NSIS mirror $nsisUrl failed: $_"
-            }
-          }
-          if (!$downloaded) { throw "Could not download a verified NSIS archive from any mirror" }
-
-          Expand-Archive -Path $nsisZip -DestinationPath $env:RUNNER_TEMP -Force
-          $makensisPath = Join-Path $nsisRoot "Bin\makensis.exe"
-          if (!(Test-Path $makensisPath)) { throw "NSIS archive is missing Bin\makensis.exe" }
-          if (!(Test-Path (Join-Path $nsisRoot "Stubs"))) { throw "NSIS archive is missing its Stubs directory" }
-          $env:NSISDIR = $nsisRoot
-          Add-Content -Path $env:GITHUB_ENV -Value "MAKENSIS_PATH=$makensisPath"
-          Add-Content -Path $env:GITHUB_ENV -Value "NSISDIR=$nsisRoot"
-          & $makensisPath "/VERSION"
-          if ($LASTEXITCODE -ne 0) { throw "NSIS compiler self-check failed (exit code $LASTEXITCODE)" }
-
-      - name: Prepare NSIS installer script
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $version = if ($env:FERROX_VERSION) { $env:FERROX_VERSION } else { "0.2.0-$($env:GITHUB_SHA.Substring(0,7))" }
-          $installerName = "Ferrox-Setup-${version}-x86_64.exe"
-          $releaseDir = "target/x86_64-pc-windows-msvc/release"
-          $exePath = Join-Path $releaseDir "ferrox.exe"
-          $webView2Path = Join-Path $releaseDir "MicrosoftEdgeWebview2Setup.exe"
-          $iconPath = Join-Path $releaseDir "ferrox.ico"
-          Copy-Item ".github/installer/ferrox.ico" $iconPath
-          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $webView2Path
-          if (!(Test-Path $exePath)) { throw "Ferrox executable was not found: $exePath" }
-          if ((Get-Item $webView2Path).Length -lt 100KB) { throw "WebView2 bootstrapper download is missing or incomplete" }
-
-          Copy-Item ".github/installer/ferrox.nsi" "ferrox-installer.nsi"
-          (Get-Content "ferrox-installer.nsi" -Raw) `
-            -replace "@VERSION@", $version `
-            -replace "@INSTALLER_NAME@", $installerName `
-            -replace "@EXE_PATH@", $exePath `
-            -replace "@WEBVIEW2_PATH@", $webView2Path `
-            -replace "@ICON_PATH@", $iconPath `
-            | Set-Content "ferrox-installer.nsi" -Encoding ASCII
-
-          Write-Host "NSIS script prepared: ferrox-installer.nsi"
-          Write-Host "Installer will be: $installerName"
-
-      - name: Build NSIS installer (.exe)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $version = if ($env:FERROX_VERSION) { $env:FERROX_VERSION } else { "0.2.0-$($env:GITHUB_SHA.Substring(0,7))" }
-          $installerName = "Ferrox-Setup-${version}-x86_64.exe"
-
-          Write-Host "Building NSIS installer: $installerName"
-          if (!(Test-Path $env:MAKENSIS_PATH)) { throw "Portable NSIS compiler was not extracted" }
-          & $env:MAKENSIS_PATH "/V1" "ferrox-installer.nsi"
-          if ($LASTEXITCODE -ne 0) { throw "NSIS failed to build the installer (exit code $LASTEXITCODE)" }
-          if (!(Test-Path $installerName)) { throw "NSIS did not create $installerName" }
-          $installerPath = "target/x86_64-pc-windows-msvc/release/$installerName"
-          Move-Item -Force $installerName $installerPath
-          $hash = (Get-FileHash $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $installerName" | Out-File "$($installerPath).sha256" -Encoding ascii
-          Write-Host "Installer built successfully and checksum saved: $installerPath"
-
       - name: Create portable Windows ZIP
         shell: pwsh
         run: |
@@ -206,8 +122,7 @@ jobs:
           $releaseDir = "target/x86_64-pc-windows-msvc/release"
           $artifacts = @(
             @{ Path = (Join-Path $releaseDir "ferrox.exe"); Checksum = (Join-Path $releaseDir "ferrox.exe.sha256"); Name = "ferrox.exe" },
-            @{ Path = (Join-Path $releaseDir "ferrox-windows-x86_64-$version.zip"); Checksum = (Join-Path $releaseDir "ferrox-windows-x86_64-$version.zip.sha256"); Name = "Windows portable ZIP" },
-            @{ Path = (Join-Path $releaseDir "Ferrox-Setup-$version-x86_64.exe"); Checksum = (Join-Path $releaseDir "Ferrox-Setup-$version-x86_64.exe.sha256"); Name = "Windows installer" }
+            @{ Path = (Join-Path $releaseDir "ferrox-windows-x86_64-$version.zip"); Checksum = (Join-Path $releaseDir "ferrox-windows-x86_64-$version.zip.sha256"); Name = "Windows portable ZIP" }
           )
           foreach ($artifact in $artifacts) {
             if (!(Test-Path $artifact.Path)) { throw "$($artifact.Name) was not found: $($artifact.Path)" }
@@ -227,8 +142,6 @@ jobs:
             target/x86_64-pc-windows-msvc/release/ferrox.exe.sha256
             target/x86_64-pc-windows-msvc/release/*.zip
             target/x86_64-pc-windows-msvc/release/*.zip.sha256
-            target/x86_64-pc-windows-msvc/release/Ferrox-Setup-*.exe
-            target/x86_64-pc-windows-msvc/release/Ferrox-Setup-*.exe.sha256
           retention-days: 30
 
   # =======================================================================
@@ -236,7 +149,7 @@ jobs:
   # =======================================================================
   build-linux:
     name: Linux (Portable)
-    needs: quality-gates
+    needs: [quality-gates, build-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -248,7 +161,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
-            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev nsis
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -282,6 +195,51 @@ jobs:
           sha256sum -c "$tar_name.sha256" --status || { echo "Linux hash mismatch!"; exit 1; }
           echo "Linux artifacts verified OK"
 
+      - name: Download Windows artifacts for installer
+        uses: actions/download-artifact@v4
+        with:
+          name: ferrox-windows-x86_64
+          path: artifacts/windows
+
+      - name: Build Windows NSIS installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${FERROX_VERSION:-0.2.0-${GITHUB_SHA:0:7}}"
+          installer_name="Ferrox-Setup-${version}-x86_64.exe"
+          mkdir -p installer-work
+          curl -fsSL "https://go.microsoft.com/fwlink/p/?LinkId=2124703" \
+            -o installer-work/MicrosoftEdgeWebview2Setup.exe
+          if [[ "$(stat -c%s installer-work/MicrosoftEdgeWebview2Setup.exe)" -lt 102400 ]]; then
+            echo "WebView2 bootstrapper download is missing or incomplete" >&2
+            exit 1
+          fi
+          exe_path="$PWD/artifacts/windows/ferrox.exe"
+          webview2_path="$PWD/installer-work/MicrosoftEdgeWebview2Setup.exe"
+          icon_path="$PWD/.github/installer/ferrox.ico"
+          sed \
+            -e "s|@VERSION@|${version}|g" \
+            -e "s|@INSTALLER_NAME@|${installer_name}|g" \
+            -e "s|@EXE_PATH@|${exe_path}|g" \
+            -e "s|@WEBVIEW2_PATH@|${webview2_path}|g" \
+            -e "s|@ICON_PATH@|${icon_path}|g" \
+            .github/installer/ferrox.nsi > installer-work/ferrox-installer.nsi
+          makensis -V1 installer-work/ferrox-installer.nsi
+          if [[ ! -s "$installer_name" ]]; then
+            echo "NSIS did not create $installer_name" >&2
+            exit 1
+          fi
+          mv "$installer_name" artifacts/windows/
+          (cd artifacts/windows && sha256sum "$installer_name" > "$installer_name.sha256")
+
+      - name: Verify Windows installer
+        run: |
+          cd artifacts/windows
+          installer="Ferrox-Setup-${FERROX_VERSION:-0.2.0-${GITHUB_SHA:0:7}}-x86_64.exe"
+          sha256sum -c "$installer.sha256" --status
+          test -s "$installer"
+          echo "Windows NSIS installer verified OK"
+
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -289,6 +247,15 @@ jobs:
           path: |
             ferrox-linux-x86_64*.tar.gz
             ferrox-linux-x86_64*.tar.gz.sha256
+          retention-days: 30
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ferrox-windows-installer
+          path: |
+            artifacts/windows/Ferrox-Setup-*.exe
+            artifacts/windows/Ferrox-Setup-*.exe.sha256
           retention-days: 30
 
   # =======================================================================
@@ -307,6 +274,12 @@ jobs:
         with:
           name: ferrox-windows-x86_64
           path: artifacts/windows
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: ferrox-windows-installer
+          path: artifacts/windows-installer
 
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
@@ -337,6 +310,8 @@ jobs:
           set -e
           echo "=== Windows ==="
           ls -lh artifacts/windows/ || echo "NO WINDOWS ARTIFACTS"
+          echo "=== Windows installer ==="
+          ls -lh artifacts/windows-installer/ || echo "NO WINDOWS INSTALLER"
           echo "=== Linux ==="
           ls -lh artifacts/linux/ || echo "NO LINUX ARTIFACTS"
 
@@ -365,8 +340,8 @@ jobs:
           files: |
             artifacts/windows/ferrox.exe
             artifacts/windows/ferrox.exe.sha256
-            artifacts/windows/Ferrox-Setup-*.exe
-            artifacts/windows/Ferrox-Setup-*.exe.sha256
+            artifacts/windows-installer/Ferrox-Setup-*.exe
+            artifacts/windows-installer/Ferrox-Setup-*.exe.sha256
             artifacts/windows/*.zip
             artifacts/windows/*.zip.sha256
             artifacts/linux/ferrox-linux-x86_64*.tar.gz

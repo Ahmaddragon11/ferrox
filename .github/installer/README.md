@@ -1,6 +1,6 @@
 # Ferrox Windows Installer (NSIS)
 
-هذا المجلد يحتوي على سكربت NSIS لبناء المثبّت الآلي لـ Ferrox على Windows.
+هذا المجلد يحتوي على سكربت NSIS لبناء مثبّت Windows الخاص بـ Ferrox.
 
 ## الاستخدام
 
@@ -8,11 +8,15 @@
 
 ```
 .github/workflows/release.yml
-  └─ build-windows job
-      ├─ تثبيت NSIS والتحقق من وجوده
-      ├─ تجهيز الملفات وقالب المثبّت
-      └─ بناء المثبّت وإنشاء SHA-256 (يفشل الإصدار بوضوح عند وجود خطأ)
+  ├─ build-windows job
+  │   └─ بناء ferrox.exe وملف Windows المحمول ورفعهما
+  └─ build-linux job
+      ├─ تثبيت NSIS من مستودع Ubuntu الرسمي
+      ├─ تنزيل ملف Windows التنفيذي وتجهيز قالب المثبّت
+      └─ بناء مثبّت Windows والتحقق من SHA-256
 ```
+
+يُبنى ملف التثبيت على Linux باستخدام NSIS متعدد المنصات، لتجنب الاعتماد على مُثبّت NSIS من SourceForge في Windows runner.
 
 ## المتغيرات المُستبدلة
 
@@ -23,11 +27,10 @@
 | `@EXE_PATH@` | مسار ملف `ferrox.exe` المبنى |
 | `@WEBVIEW2_PATH@` | مسار WebView2 Runtime bootstrapper المضمّن |
 | `@ICON_PATH@` | مسار أيقونة Ferrox بصيغة ICO |
-| `@EXE_HASH@` | SHA256 لملف `ferrox.exe` |
 
 ## متطلبات البناء
 
-- **makensis** (NSIS 3.x) — يُثبّت تلقائياً في workflow الإصدار.
+- **makensis** (NSIS 3.x) — يُثبّت تلقائياً عبر حزم Ubuntu في workflow الإصدار.
 - يجب توفير قيم المتغيرات المذكورة أعلاه قبل البناء اليدوي.
 - يفشل إصدار Windows إذا تعذّر بناء المثبّت بدلاً من نشر ملفات ناقصة.
 
@@ -42,7 +45,7 @@
 
 ## أدوات مساعدة
 
-```powershell
-# بناء المثبّت يدوياً (يتطلب NSIS)
-makensis /V1 .github\installer\ferrox-installer.nsi
+```bash
+# على Ubuntu، بعد استبدال متغيرات القالب (يتطلب NSIS)
+makensis -V1 .github/installer/ferrox-installer.nsi
 ```
