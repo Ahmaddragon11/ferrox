@@ -18,8 +18,8 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Ferrox Browser Contributors"]
-repository = "https://github.com/ferrox-browser/ferrox"
-homepage = "https://github.com/ferrox-browser/ferrox"
+repository = "https://github.com/Ahmaddragon11/ferrox"
+homepage = "https://github.com/Ahmaddragon11/ferrox"
 rust-version = "1.95"
 
 [workspace.dependencies]
