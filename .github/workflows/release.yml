@@ -64,6 +64,7 @@ jobs:
 
       - name: Prepare release metadata
         id: metadata
+        shell: bash
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VERSION="${{ github.ref_name }}"
