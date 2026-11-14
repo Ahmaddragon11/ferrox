@@ -1,0 +1,6 @@
+[release]
+version = "0.1.0"
+channel = "stable"
+app_id = "org.ferrox.browser"
+manifest_url = "https://releases.ferrox.invalid/update-manifest.json"
+public_key_hex = "3b6a27bcceb6a42d62a3a8d02a6f0d73653215771de243a63ac048a18b59da29"

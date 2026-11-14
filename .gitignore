@@ -1,0 +1,9 @@
+/target
+Cargo.lock.bak
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.bak
+.DS_Store
+Thumbs.db

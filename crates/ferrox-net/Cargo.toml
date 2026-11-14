@@ -1,0 +1,13 @@
+[package]
+name = "ferrox-net"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ferrox-core.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+url.workspace = true

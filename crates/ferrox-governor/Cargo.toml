@@ -1,0 +1,12 @@
+[package]
+name = "ferrox-governor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ferrox-core.workspace = true
+serde.workspace = true
+serde_json = "1.0"
+sysinfo.workspace = true
+chrono.workspace = true

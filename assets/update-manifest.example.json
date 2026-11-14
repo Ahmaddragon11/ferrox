@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "channel": "stable",
+  "publishedAt": "2026-12-01T12:00:00Z",
+  "notesUrl": "https://github.com/ferrox-browser/ferrox/releases/tag/v0.2.0",
+  "minSupportedVersion": "0.1.0",
+  "assets": [
+    {
+      "platform": "windows-x86_64",
+      "url": "https://github.com/ferrox-browser/ferrox/releases/download/v0.2.0/ferrox-windows-x86_64.zip",
+      "size": 0,
+      "sha256": "REPLACE_WITH_SHA256_HEX",
+      "signature": "REPLACE_WITH_ED25519_SIGNATURE_HEX"
+    },
+    {
+      "platform": "linux-x86_64",
+      "url": "https://github.com/ferrox-browser/ferrox/releases/download/v0.2.0/ferrox-linux-x86_64.tar.gz",
+      "size": 0,
+      "sha256": "REPLACE_WITH_SHA256_HEX",
+      "signature": "REPLACE_WITH_ED25519_SIGNATURE_HEX"
+    }
+  ]
+}

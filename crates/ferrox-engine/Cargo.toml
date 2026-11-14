@@ -1,0 +1,23 @@
+[package]
+name = "ferrox-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ferrox-core.workspace = true
+ferrox-governor.workspace = true
+ferrox-shield.workspace = true
+ferrox-net.workspace = true
+ferrox-storage.workspace = true
+wry.workspace = true
+raw-window-handle.workspace = true
+scraper.workspace = true
+html5ever.workspace = true
+url.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
