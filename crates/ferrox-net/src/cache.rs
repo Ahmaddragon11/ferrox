@@ -47,7 +47,13 @@ impl MemoryAssetCache {
         Some(entry.clone())
     }
 
-    pub fn insert(&self, key: impl Into<String>, bytes: Vec<u8>, content_type: String, ttl: Duration) {
+    pub fn insert(
+        &self,
+        key: impl Into<String>,
+        bytes: Vec<u8>,
+        content_type: String,
+        ttl: Duration,
+    ) {
         let key = key.into();
         let len = bytes.len();
         if len > self.max_bytes {
@@ -104,8 +110,18 @@ mod tests {
     #[test]
     fn evicts_when_over_budget() {
         let cache = MemoryAssetCache::new(10);
-        cache.insert("a", vec![1, 2, 3, 4, 5, 6], "text/plain".into(), Duration::from_secs(60));
-        cache.insert("b", vec![7, 8, 9, 10, 11, 12], "text/plain".into(), Duration::from_secs(60));
+        cache.insert(
+            "a",
+            vec![1, 2, 3, 4, 5, 6],
+            "text/plain".into(),
+            Duration::from_secs(60),
+        );
+        cache.insert(
+            "b",
+            vec![7, 8, 9, 10, 11, 12],
+            "text/plain".into(),
+            Duration::from_secs(60),
+        );
         assert!(cache.get("a").is_none());
         assert!(cache.get("b").is_some());
         assert_eq!(cache.current_bytes(), 6);

@@ -64,15 +64,17 @@ pub fn provider_for_bang(bang: &str) -> Option<&'static SearchProvider> {
 }
 
 pub fn direct_bang_url(bang: &str, query: &str) -> Option<String> {
-    DIRECT_BANGS.iter().find(|(b, _)| *b == bang).map(|(_, url)| {
-        let encoded: String =
-            url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-        url.replace("{query}", &encoded)
-    })
+    DIRECT_BANGS
+        .iter()
+        .find(|(b, _)| *b == bang)
+        .map(|(_, url)| {
+            let encoded = ferrox_core::encode_query_component(query);
+            url.replace("{query}", &encoded)
+        })
 }
 
 pub fn build_search_url(engine: SearchEngineId, query: &str) -> String {
-    let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
+    let encoded = ferrox_core::encode_query_component(query);
     provider_for_engine(engine)
         .search_url
         .replace("{query}", &encoded)

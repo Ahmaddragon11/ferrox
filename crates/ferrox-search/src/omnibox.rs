@@ -8,9 +8,15 @@ use ferrox_storage::StorageDb;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OmniboxAction {
     Navigate(String),
-    Search { engine: SearchEngineId, query: String },
+    Search {
+        engine: SearchEngineId,
+        query: String,
+    },
     Internal(String),
-    ShowCalculation { expression: String, result: String },
+    ShowCalculation {
+        expression: String,
+        result: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,8 +62,8 @@ impl OmniboxResolver {
         if let Some(rest) = input.strip_prefix('=') {
             let trimmed = rest.trim();
             if let Ok(value) = calculator::evaluate(trimmed) {
-                let result = calculator::try_evaluate(trimmed)
-                    .unwrap_or_else(|| format!("{value}"));
+                let result =
+                    calculator::try_evaluate(trimmed).unwrap_or_else(|| format!("{value}"));
                 return OmniboxAction::ShowCalculation {
                     expression: trimmed.to_string(),
                     result,
@@ -108,7 +114,12 @@ impl OmniboxResolver {
     }
 
     /// Combines live local history/bookmark matches with the resolved action.
-    pub fn suggestions(&self, db: &StorageDb, input: &str, limit: usize) -> Result<Vec<Suggestion>> {
+    pub fn suggestions(
+        &self,
+        db: &StorageDb,
+        input: &str,
+        limit: usize,
+    ) -> Result<Vec<Suggestion>> {
         let mut out = Vec::new();
         let input = input.trim();
         if input.is_empty() {
@@ -173,7 +184,7 @@ impl OmniboxResolver {
             }),
         }
 
-        out.sort_by(|a, b| b.relevance.cmp(&a.relevance));
+        out.sort_by_key(|suggestion| std::cmp::Reverse(suggestion.relevance));
         out.truncate(limit.max(1));
         Ok(out)
     }
@@ -251,13 +262,22 @@ mod tests {
     #[test]
     fn suggestions_merge_local_and_remote() {
         let db = StorageDb::open_in_memory().unwrap();
-        db.record_visit("https://rust-lang.org", "Rust Language").unwrap();
+        db.record_visit("https://rust-lang.org", "Rust Language")
+            .unwrap();
         db.add_bookmark("https://doc.rust-lang.org", "Rust Docs", "Dev")
             .unwrap();
 
         let suggestions = resolver().suggestions(&db, "rust", 10).unwrap();
-        assert!(suggestions.iter().any(|s| s.kind == SuggestionKind::History));
-        assert!(suggestions.iter().any(|s| s.kind == SuggestionKind::Bookmark));
+        assert!(
+            suggestions
+                .iter()
+                .any(|s| s.kind == SuggestionKind::History)
+        );
+        assert!(
+            suggestions
+                .iter()
+                .any(|s| s.kind == SuggestionKind::Bookmark)
+        );
         assert!(suggestions.iter().any(|s| s.kind == SuggestionKind::Search));
     }
 }

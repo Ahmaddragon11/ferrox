@@ -26,6 +26,8 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy};
 use winit::window::{Icon, Window, WindowId};
 
+use crate::downloads::DownloadState;
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum AppEvent {
     Wake,
@@ -45,8 +47,27 @@ pub(crate) enum AsyncEvent {
         seq: u64,
         result: Box<Result<TurboDocument>>,
     },
-    UpdateChecked(Box<Result<Option<(ferrox_updater::UpdateManifest, ferrox_updater::ReleaseAsset)>>>),
+    UpdateChecked(
+        Box<Result<Option<(ferrox_updater::UpdateManifest, ferrox_updater::ReleaseAsset)>>>,
+    ),
     UpdateDownloaded(Box<Result<PathBuf>>),
+    /// The server reported the expected size of a download.
+    DownloadSize {
+        id: String,
+        total: Option<u64>,
+    },
+    /// The checksum of a finished download was computed.
+    DownloadHash {
+        id: String,
+        sha256: String,
+    },
+    /// The source code of a page was fetched.
+    SourceReady {
+        tab_id: TabId,
+        url: String,
+        source: String,
+        truncated: bool,
+    },
 }
 
 /// Channel wrapper that wakes the winit event loop after every message.
@@ -73,6 +94,7 @@ enum GlobalAction {
     History,
     Downloads,
     Incognito,
+    Find,
 }
 
 pub(crate) struct FerroxApp {
@@ -108,13 +130,18 @@ pub(crate) struct FerroxApp {
     pub(crate) turbo_stack: HashMap<TabId, Vec<String>>,
     pub(crate) next_seq: u64,
 
+    /// Zoom factor of every tab (`1.0` is 100%).
+    pub(crate) zoom_levels: HashMap<TabId, f64>,
+    /// State of the download manager.
+    pub(crate) downloads: DownloadState,
+
     pub(crate) address_editing: bool,
     pub(crate) update_view: UpdateView,
-    pub(crate) pending_update: Option<(
-        ferrox_updater::UpdateManifest,
-        ferrox_updater::ReleaseAsset,
-    )>,
+    pub(crate) pending_update:
+        Option<(ferrox_updater::UpdateManifest, ferrox_updater::ReleaseAsset)>,
     pub(crate) last_update_check: Option<DateTime<Utc>>,
+    /// Moment at which the status bubble disappears again.
+    pub(crate) status_deadline: Option<Instant>,
     pub(crate) update_in_flight: bool,
     pub(crate) update_checked_once: bool,
 
@@ -130,7 +157,6 @@ pub(crate) struct FerroxApp {
     pub(crate) should_exit: bool,
     pub(crate) shutting_down: bool,
     pub(crate) version: String,
-    pub(crate) wake: Arc<dyn Fn() + Send + Sync>,
     pub(crate) startup: StartupOptions,
 }
 
@@ -155,15 +181,14 @@ impl FerroxApp {
         });
 
         let (engine_tx, engine_rx) = std::sync::mpsc::channel();
-        let engine_shared = Arc::new(EngineShared::new(
-            shield.clone(),
-            engine_tx,
-            wake.clone(),
-        ));
+        let engine_shared = Arc::new(EngineShared::new(shield.clone(), engine_tx, wake.clone()));
         engine_shared.set_shield_enabled(config.shield_enabled);
+        let downloads_dir = data_dir.join("downloads");
+        std::fs::create_dir_all(&downloads_dir)?;
         let engine = WebViewEngine::new(
             engine_shared.clone(),
             bounds(0.0, 110.0, 1280.0, 710.0),
+            downloads_dir,
         );
 
         let net = FastNetClient::new()?;
@@ -188,12 +213,14 @@ impl FerroxApp {
             config.max_ram_percent_before_hibernate,
         );
 
-        let mut chrome = ChromeState::default();
-        chrome.version = version.clone();
-        chrome.memory_mb = 42.0;
-        chrome.compute_mode = config.default_compute_mode;
-        chrome.shield_enabled = config.shield_enabled;
-        chrome.incognito = startup.private;
+        let chrome = ChromeState {
+            version: version.clone(),
+            memory_mb: 42.0,
+            compute_mode: config.default_compute_mode,
+            shield_enabled: config.shield_enabled,
+            incognito: startup.private,
+            ..Default::default()
+        };
 
         let update_view = UpdateView {
             current_version: version.clone(),
@@ -230,10 +257,13 @@ impl FerroxApp {
             turbo_current: HashMap::new(),
             turbo_stack: HashMap::new(),
             next_seq: 0,
+            zoom_levels: HashMap::new(),
+            downloads: DownloadState::default(),
             address_editing: false,
             update_view,
             pending_update: None,
             last_update_check: None,
+            status_deadline: None,
             update_in_flight: false,
             update_checked_once: false,
             hibernation,
@@ -247,7 +277,6 @@ impl FerroxApp {
             should_exit: false,
             shutting_down: false,
             version,
-            wake,
             startup,
         })
     }
@@ -269,12 +298,13 @@ impl FerroxApp {
         self.tabs.active_tab().map(|t| t.id)
     }
 
-    fn request_repaint(&self) {
+    pub(crate) fn request_repaint(&self) {
         self.egui_ctx.request_repaint();
     }
 
-    fn status(&mut self, message: impl Into<String>) {
+    pub(crate) fn status(&mut self, message: impl Into<String>) {
         self.chrome.status = Some(message.into());
+        self.status_deadline = Some(Instant::now() + Duration::from_secs(6));
         self.request_repaint();
     }
 
@@ -300,10 +330,10 @@ impl FerroxApp {
             first = Some(id);
         } else {
             let mut restored = Vec::new();
-            if self.config.restore_session_on_startup {
-                if let Ok(session) = self.standard_db.load_session() {
-                    restored = session;
-                }
+            if self.config.restore_session_on_startup
+                && let Ok(session) = self.standard_db.load_session()
+            {
+                restored = session;
             }
             if !restored.is_empty() {
                 for entry in restored {
@@ -311,7 +341,14 @@ impl FerroxApp {
                         continue;
                     }
                     let mode = self.mode_for_url(&entry.url);
-                    self.tabs.open_tab(entry.url, mode, false);
+                    let id = self.tabs.open_tab(entry.url, mode, false);
+                    if let Some(tab) = self.tabs.find_mut(id) {
+                        tab.pinned = entry.pinned;
+                        tab.muted = entry.muted;
+                        if !entry.title.trim().is_empty() {
+                            tab.title = entry.title;
+                        }
+                    }
                 }
                 if let Some(tab) = self.tabs.tabs().first() {
                     let id = tab.id;
@@ -385,7 +422,7 @@ impl FerroxApp {
         }
     }
 
-    fn show_tab_and_load(&mut self, id: TabId) {
+    pub(crate) fn show_tab_and_load(&mut self, id: TabId) {
         self.show_tab(id);
         if self.engine.has_view(id) {
             if let Some(tab) = self.tabs.tabs().iter().find(|t| t.id == id) {
@@ -404,7 +441,7 @@ impl FerroxApp {
         }
     }
 
-    fn switch_tab(&mut self, id: TabId) {
+    pub(crate) fn switch_tab(&mut self, id: TabId) {
         if self.active_tab_id() == Some(id) {
             return;
         }
@@ -414,6 +451,11 @@ impl FerroxApp {
         self.address_editing = false;
         self.chrome.show_suggestions = false;
         self.chrome.menu_open = false;
+        self.chrome.find_open = false;
+        self.chrome.find_query.clear();
+        self.chrome.find_count = 0;
+        self.chrome.find_index = 0;
+        self.chrome.tab_menu = None;
         self.show_tab_and_load(id);
         if let Some(tab) = self.tabs.active_tab() {
             self.chrome.address = tab.url.clone();
@@ -422,7 +464,7 @@ impl FerroxApp {
         self.request_repaint();
     }
 
-    fn open_tab(&mut self, url: String) {
+    pub(crate) fn open_tab(&mut self, url: String) {
         let mode = self.mode_for_url(&url);
         let id = self.tabs.open_tab(url, mode, true);
         self.address_editing = false;
@@ -471,7 +513,9 @@ impl FerroxApp {
     }
 
     fn reload_active(&mut self) {
-        let Some(id) = self.active_tab_id() else { return };
+        let Some(id) = self.active_tab_id() else {
+            return;
+        };
         if self.turbo_current.contains_key(&id) {
             let url = self
                 .turbo_current
@@ -483,7 +527,11 @@ impl FerroxApp {
             }
             return;
         }
-        let url = self.tabs.active_tab().map(|t| t.url.clone()).unwrap_or_default();
+        let url = self
+            .tabs
+            .active_tab()
+            .map(|t| t.url.clone())
+            .unwrap_or_default();
         if url.starts_with("ferrox://") {
             self.open_internal(&url);
         } else if let Err(err) = self.engine.reload(id) {
@@ -492,16 +540,17 @@ impl FerroxApp {
     }
 
     fn go_back(&mut self) {
-        let Some(id) = self.active_tab_id() else { return };
-        if self.turbo_current.contains_key(&id) {
-            if let Some(stack) = self.turbo_stack.get_mut(&id) {
-                if stack.len() > 1 {
-                    stack.pop();
-                    if let Some(previous) = stack.last().cloned() {
-                        self.start_turbo(id, previous, false);
-                        return;
-                    }
-                }
+        let Some(id) = self.active_tab_id() else {
+            return;
+        };
+        if self.turbo_current.contains_key(&id)
+            && let Some(stack) = self.turbo_stack.get_mut(&id)
+            && stack.len() > 1
+        {
+            stack.pop();
+            if let Some(previous) = stack.last().cloned() {
+                self.start_turbo(id, previous, false);
+                return;
             }
         }
         if let Err(err) = self.engine.go_back(id) {
@@ -510,7 +559,9 @@ impl FerroxApp {
     }
 
     fn go_forward(&mut self) {
-        let Some(id) = self.active_tab_id() else { return };
+        let Some(id) = self.active_tab_id() else {
+            return;
+        };
         if let Err(err) = self.engine.go_forward(id) {
             self.status(format!("Cannot go forward: {err}"));
         }
@@ -545,7 +596,9 @@ impl FerroxApp {
     }
 
     fn toggle_bookmark(&mut self) {
-        let Some(tab) = self.tabs.active_tab() else { return };
+        let Some(tab) = self.tabs.active_tab() else {
+            return;
+        };
         let url = tab.url.clone();
         if !url.starts_with("http://") && !url.starts_with("https://") {
             self.status("Only web pages can be bookmarked");
@@ -643,10 +696,12 @@ impl FerroxApp {
                     let _ = db.record_visit(&url, &title);
                 }
 
-                if finished && self.active_tab_id() == Some(tab_id) && !self.address_editing {
-                    if let Some(tab) = self.tabs.tabs().iter().find(|t| t.id == tab_id) {
-                        self.chrome.address = tab.url.clone();
-                    }
+                if finished
+                    && self.active_tab_id() == Some(tab_id)
+                    && !self.address_editing
+                    && let Some(tab) = self.tabs.tabs().iter().find(|t| t.id == tab_id)
+                {
+                    self.chrome.address = tab.url.clone();
                 }
                 self.request_repaint();
             }
@@ -655,6 +710,17 @@ impl FerroxApp {
             }
             EngineEvent::NavigationBlocked { url, .. } => {
                 self.status(format!("Ferrox Shield blocked: {url}"));
+            }
+            EngineEvent::DownloadStarted { tab_id, url, path } => {
+                self.on_download_started(tab_id, url, path);
+            }
+            EngineEvent::DownloadCompleted {
+                tab_id,
+                url,
+                path,
+                success,
+            } => {
+                self.on_download_completed(tab_id, url, path, success);
             }
         }
     }
@@ -688,11 +754,13 @@ impl FerroxApp {
                             tab.title = document.title.clone();
                             tab.url = document.final_url.clone();
                         }
+                        // Turbo pages are read outside of the webview, so the
+                        // visit has to be recorded by hand.
+                        let db = self.active_db();
+                        let _ = db.record_visit(&document.final_url, &document.title);
                         if self.active_tab_id() == Some(tab_id) {
                             self.chrome.address = document.final_url.clone();
                             self.update_tab_title();
-                        }
-                        if self.active_tab_id() == Some(tab_id) {
                             self.push_profiler_stats();
                         }
                     }
@@ -754,6 +822,16 @@ impl FerroxApp {
                 }
                 Err(err) => self.status(format!("Update download failed: {err}")),
             },
+            AsyncEvent::DownloadSize { id, total } => self.on_download_size(id, total),
+            AsyncEvent::DownloadHash { id, sha256 } => self.on_download_hash(id, sha256),
+            AsyncEvent::SourceReady {
+                tab_id,
+                url,
+                source,
+                truncated,
+            } => {
+                self.show_page_source(tab_id, url, source, truncated);
+            }
         }
     }
 
@@ -766,12 +844,7 @@ impl FerroxApp {
             .get("cmd")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        let string_arg = |key: &str| {
-            value
-                .get(key)
-                .and_then(|v| v.as_str())
-                .map(str::to_string)
-        };
+        let string_arg = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_string);
         let int_arg = |key: &str| value.get(key).and_then(|v| v.as_i64());
         let bool_arg = |key: &str| value.get(key).and_then(|v| v.as_bool());
 
@@ -901,6 +974,67 @@ impl FerroxApp {
                     self.save_config();
                 }
             }
+            "set_restore_session" => {
+                if let Some(enabled) = bool_arg("value") {
+                    self.config.restore_session_on_startup = enabled;
+                    self.save_config();
+                    self.status(if enabled {
+                        "The last session is restored on startup"
+                    } else {
+                        "Session restore disabled"
+                    });
+                }
+            }
+            "set_site_mode" => {
+                let host = string_arg("host").unwrap_or_default();
+                let mode = string_arg("value").unwrap_or_default();
+                if host.trim().is_empty() {
+                    return;
+                }
+                let mode = match mode.as_str() {
+                    "turbo" => ComputeMode::Turbo,
+                    "eco" => ComputeMode::Eco,
+                    "full" => ComputeMode::Full,
+                    _ => ComputeMode::Balanced,
+                };
+                let host = host
+                    .trim()
+                    .trim_start_matches("https://")
+                    .trim_start_matches("http://");
+                let host = host.split('/').next().unwrap_or(host).to_ascii_lowercase();
+                if host.is_empty() {
+                    return;
+                }
+                self.config
+                    .per_site_compute_modes
+                    .insert(host.clone(), mode);
+                self.save_config();
+                self.status(format!("{host} now runs in {} mode", mode.as_str()));
+                self.refresh_internal_page_if("ferrox://settings");
+            }
+            "remove_site_mode" => {
+                if let Some(host) = string_arg("host") {
+                    self.config.per_site_compute_modes.remove(&host);
+                    self.save_config();
+                    self.status(format!("Removed the policy for {host}"));
+                    self.refresh_internal_page_if("ferrox://settings");
+                }
+            }
+            "clear_downloads" => {
+                let db = self.active_db();
+                for item in db.list_downloads().unwrap_or_default() {
+                    self.remove_download(&item.id);
+                }
+                self.status("Download list cleared");
+            }
+            "clear_all_data" => {
+                let db = self.active_db();
+                let _ = db.clear_history();
+                for item in db.list_downloads().unwrap_or_default() {
+                    self.remove_download(&item.id);
+                }
+                self.status("All browsing data erased");
+            }
             "check_update" => self.start_update_check(),
             "install_update" => self.install_update(),
             "open_notes" => {
@@ -985,24 +1119,31 @@ impl FerroxApp {
                     self.refresh_internal_page_if("ferrox://bookmarks");
                 }
             }
-            "export_bookmarks" => {
-                match self.standard_db.export_bookmarks_html() {
-                    Ok(html) => {
-                        let target = self.data_dir.join("bookmarks.html");
-                        match std::fs::write(&target, html) {
-                            Ok(()) => {
-                                self.status(format!("Bookmarks exported to {}", target.display()))
-                            }
-                            Err(err) => self.status(format!("Export failed: {err}")),
+            "export_bookmarks" => match self.standard_db.export_bookmarks_html() {
+                Ok(html) => {
+                    let target = self.data_dir.join("bookmarks.html");
+                    match std::fs::write(&target, html) {
+                        Ok(()) => {
+                            self.status(format!("Bookmarks exported to {}", target.display()))
                         }
+                        Err(err) => self.status(format!("Export failed: {err}")),
                     }
-                    Err(err) => self.status(format!("Export failed: {err}")),
+                }
+                Err(err) => self.status(format!("Export failed: {err}")),
+            },
+            "delete_download" => {
+                if let Some(id) = string_arg("id") {
+                    self.remove_download(&id);
                 }
             }
-            "delete_download" => {
-                if let Some(url_or_id) = string_arg("id") {
-                    let _ = self.active_db().remove_download(&url_or_id);
-                    self.refresh_internal_page_if("ferrox://downloads");
+            "reveal_download" => {
+                if let Some(id) = string_arg("id") {
+                    self.reveal_download(&id);
+                }
+            }
+            "retry_download" => {
+                if let Some(id) = string_arg("id") {
+                    self.retry_download(&id);
                 }
             }
             "open_download" => {
@@ -1012,6 +1153,13 @@ impl FerroxApp {
                         open_path(&item.file_path);
                     }
                 }
+            }
+            "find_results" => {
+                let count = value.get("count").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                let index = value.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                self.chrome.find_count = count;
+                self.chrome.find_index = index;
+                self.request_repaint();
             }
             other => {
                 tracing::debug!("unhandled IPC command: {other}");
@@ -1037,6 +1185,10 @@ impl FerroxApp {
             "history" => self.open_internal("ferrox://history"),
             "downloads" => self.open_internal("ferrox://downloads"),
             "incognito" => self.toggle_incognito(),
+            "find" => self.open_find_bar(),
+            "zoom_in" => self.change_zoom(0.1),
+            "zoom_out" => self.change_zoom(-0.1),
+            "zoom_reset" => self.change_zoom(0.0),
             other => tracing::debug!("unknown shortcut: {other}"),
         }
     }
@@ -1044,8 +1196,12 @@ impl FerroxApp {
     fn focus_address(&mut self) {
         self.chrome.focus_address = true;
         self.address_editing = false;
-        if let Some(window) = self.window.clone() {
-            window.focus();
+        // Hand the keyboard back to the browser chrome so the address bar can
+        // receive the keystrokes.
+        if let Some(id) = self.active_tab_id()
+            && self.engine.has_view(id)
+        {
+            let _ = self.engine.focus_parent(id);
         }
         self.request_repaint();
     }
@@ -1085,14 +1241,9 @@ impl FerroxApp {
         let channel = self.config.update_channel;
         let tx = self.async_tx.clone();
         self.runtime.spawn(async move {
-            let result = ferrox_updater::check_for_update(
-                &client,
-                &manifest_url,
-                &current,
-                channel,
-            )
-            .await;
-            let _ = tx.send(AsyncEvent::UpdateChecked(Box::new(result)));
+            let result =
+                ferrox_updater::check_for_update(&client, &manifest_url, &current, channel).await;
+            tx.send(AsyncEvent::UpdateChecked(Box::new(result)));
         });
     }
 
@@ -1115,14 +1266,8 @@ impl FerroxApp {
         let tx = self.async_tx.clone();
         let key = public_key.to_string();
         self.runtime.spawn(async move {
-            let result = ferrox_updater::download_and_verify(
-                &client,
-                &asset,
-                &key,
-                &staging,
-            )
-            .await;
-            let _ = tx.send(AsyncEvent::UpdateDownloaded(Box::new(
+            let result = ferrox_updater::download_and_verify(&client, &asset, &key, &staging).await;
+            tx.send(AsyncEvent::UpdateDownloaded(Box::new(
                 result.map(|download| download.path),
             )));
         });
@@ -1134,6 +1279,24 @@ impl FerroxApp {
 
     fn tick_maintenance(&mut self) {
         let now = Instant::now();
+
+        // The status bubble fades away on its own.
+        if let Some(deadline) = self.status_deadline
+            && deadline <= now
+        {
+            self.chrome.status = None;
+            self.status_deadline = None;
+        }
+
+        // Keep the progress of running downloads up to date.
+        let poll_due = self
+            .downloads
+            .last_poll
+            .map(|last| now.duration_since(last) >= Duration::from_millis(500))
+            .unwrap_or(!self.downloads.active.is_empty());
+        if poll_due && !self.downloads.active.is_empty() {
+            self.poll_download_progress();
+        }
 
         if now.duration_since(self.last_hibernate) >= Duration::from_secs(30) {
             self.last_hibernate = now;
@@ -1169,12 +1332,8 @@ impl FerroxApp {
         }
     }
 
-    fn refresh_internal_page_if(&mut self, prefix: &str) {
-        let Some((id, url)) = self
-            .tabs
-            .active_tab()
-            .map(|t| (t.id, t.url.clone()))
-        else {
+    pub(crate) fn refresh_internal_page_if(&mut self, prefix: &str) {
+        let Some((id, url)) = self.tabs.active_tab().map(|t| (t.id, t.url.clone())) else {
             return;
         };
         if !url.starts_with(prefix) {
@@ -1263,6 +1422,19 @@ impl FerroxApp {
             ChromeAction::OpenInternal(url) => self.open_internal(&url),
             ChromeAction::CheckUpdates => self.start_update_check(),
             ChromeAction::Quit => self.should_exit = true,
+            ChromeAction::Find => self.open_find_bar(),
+            ChromeAction::FindClose => self.close_find_bar(),
+            ChromeAction::FindChanged(query) => self.apply_find_query(&query),
+            ChromeAction::FindNext(forward) => self.find_next(forward),
+            ChromeAction::TogglePin(id) => self.toggle_pin(id),
+            ChromeAction::ToggleMute(id) => self.toggle_mute(id),
+            ChromeAction::DuplicateTab(id) => self.duplicate_tab(id),
+            ChromeAction::CloseOtherTabs(id) => self.close_other_tabs(id),
+            ChromeAction::DevTools => self.open_devtools(),
+            ChromeAction::ViewSource => self.open_view_source(),
+            ChromeAction::ZoomIn => self.change_zoom(0.1),
+            ChromeAction::ZoomOut => self.change_zoom(-0.1),
+            ChromeAction::ZoomReset => self.change_zoom(0.0),
         }
     }
 
@@ -1289,6 +1461,7 @@ impl FerroxApp {
                     egui::Key::H => GlobalAction::History,
                     egui::Key::J => GlobalAction::Downloads,
                     egui::Key::N if modifiers.shift => GlobalAction::Incognito,
+                    egui::Key::F => GlobalAction::Find,
                     _ => continue,
                 };
                 return Some(action);
@@ -1308,6 +1481,7 @@ impl FerroxApp {
             GlobalAction::History => self.open_internal("ferrox://history"),
             GlobalAction::Downloads => self.open_internal("ferrox://downloads"),
             GlobalAction::Incognito => self.toggle_incognito(),
+            GlobalAction::Find => self.open_find_bar(),
         }
     }
 
@@ -1330,7 +1504,7 @@ impl FerroxApp {
         let global_action = Self::detect_global_action(&raw_input);
 
         let mut action: Option<ChromeAction> = None;
-        let full_output = self.egui_ctx.run(raw_input, |ctx| {
+        let full_output = self.egui_ctx.run_ui(raw_input, |ctx| {
             action = chrome::draw(ctx, &mut self.chrome);
         });
 
@@ -1490,12 +1664,11 @@ impl ApplicationHandler<AppEvent> for FerroxApp {
         match event {
             WindowEvent::CloseRequested => self.shutdown(event_loop),
             WindowEvent::Resized(size) => {
-                if let Some(painter) = self.painter.as_mut() {
-                    if let (Some(width), Some(height)) =
+                if let Some(painter) = self.painter.as_mut()
+                    && let (Some(width), Some(height)) =
                         (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-                    {
-                        painter.on_window_resized(egui::ViewportId::ROOT, width, height);
-                    }
+                {
+                    painter.on_window_resized(egui::ViewportId::ROOT, width, height);
                 }
                 self.layout = (f64::NAN, f64::NAN, f64::NAN);
                 if let Some(window) = &self.window {
@@ -1538,6 +1711,14 @@ impl ApplicationHandler<AppEvent> for FerroxApp {
         }
 
         let mut wake_at = self.next_tick;
+        // Downloads need a steady heartbeat so their progress stays accurate.
+        let download_wake = Instant::now() + self.download_poll_interval();
+        if !self.downloads.active.is_empty() && download_wake < wake_at {
+            wake_at = download_wake;
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+        }
         if let Some(deadline) = self.repaint_deadline {
             if deadline <= now {
                 self.repaint_deadline = None;
@@ -1564,24 +1745,18 @@ fn window_icon() -> Icon {
             let inside = distance <= 0.96;
             let (r, g, b, a) = if inside {
                 let t = (dy + 1.0) * 0.5;
-                (
-                    255,
-                    (90.0 + 95.0 * t) as u8,
-                    (45.0 + 60.0 * t) as u8,
-                    255,
-                )
+                (255, (90.0 + 95.0 * t) as u8, (45.0 + 60.0 * t) as u8, 255)
             } else {
                 (0, 0, 0, 0)
             };
             rgba.extend_from_slice(&[r, g, b, a]);
         }
     }
-    Icon::from_rgba(rgba, size, size).unwrap_or_else(|_| {
-        Icon::from_rgba(vec![255, 106, 61, 255], 1, 1).expect("1x1 icon")
-    })
+    Icon::from_rgba(rgba, size, size)
+        .unwrap_or_else(|_| Icon::from_rgba(vec![255, 106, 61, 255], 1, 1).expect("1x1 icon"))
 }
 
-fn open_path(path: &str) {
+pub(crate) fn open_path(path: &str) {
     #[cfg(windows)]
     let mut command = {
         let mut command = std::process::Command::new("explorer");

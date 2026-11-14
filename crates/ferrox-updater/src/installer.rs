@@ -48,7 +48,9 @@ pub async fn download_and_verify(
         .map_err(|e| FerroxError::Update(format!("download body failed: {e}")))?;
 
     if bytes.len() > MAX_UPDATE_BYTES {
-        return Err(FerroxError::Update("update asset exceeds size limit".into()));
+        return Err(FerroxError::Update(
+            "update asset exceeds size limit".into(),
+        ));
     }
 
     verify_sha256(&bytes, &asset.sha256)?;

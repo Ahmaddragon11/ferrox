@@ -70,8 +70,8 @@ impl HibernationController {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ferrox_core::ComputeMode;
     use chrono::Duration;
+    use ferrox_core::ComputeMode;
 
     #[test]
     fn hibernates_idle_background_tabs_only() {
@@ -89,7 +89,11 @@ mod tests {
         assert!(hibernated.contains(&background));
         assert!(!hibernated.contains(&active));
         assert_eq!(
-            mgr.tabs().iter().find(|t| t.id == background).unwrap().state,
+            mgr.tabs()
+                .iter()
+                .find(|t| t.id == background)
+                .unwrap()
+                .state,
             TabState::Hibernated
         );
     }

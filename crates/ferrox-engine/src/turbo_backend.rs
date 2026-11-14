@@ -67,11 +67,19 @@ impl TurboReader {
             .or_else(|| meta_content(&document, "meta[property=\"og:description\"]"))
             .unwrap_or_default();
 
-        let content = Selector::parse("article").ok().and_then(|s| document.select(&s).next()).or_else(|| {
-            Selector::parse("main").ok().and_then(|s| document.select(&s).next())
-        }).or_else(|| {
-            Selector::parse("body").ok().and_then(|s| document.select(&s).next())
-        });
+        let content = Selector::parse("article")
+            .ok()
+            .and_then(|s| document.select(&s).next())
+            .or_else(|| {
+                Selector::parse("main")
+                    .ok()
+                    .and_then(|s| document.select(&s).next())
+            })
+            .or_else(|| {
+                Selector::parse("body")
+                    .ok()
+                    .and_then(|s| document.select(&s).next())
+            });
 
         let block_selector = Selector::parse("h1,h2,h3,h4,h5,h6,p,li,blockquote,pre").ok();
         let image_selector = Selector::parse("article img, main img").ok();
@@ -102,16 +110,19 @@ impl TurboReader {
                 match tag {
                     "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
                         let level = tag[1..].parse::<u8>().unwrap_or(2).clamp(2, 4);
-                        blocks_html.push_str(&format!("<h{level}>{}</h{level}>", escape_html(&text)));
+                        blocks_html
+                            .push_str(&format!("<h{level}>{}</h{level}>", escape_html(&text)));
                     }
                     "blockquote" => {
-                        blocks_html.push_str(&format!("<blockquote>{}</blockquote>", escape_html(&text)));
+                        blocks_html
+                            .push_str(&format!("<blockquote>{}</blockquote>", escape_html(&text)));
                     }
                     "pre" => {
                         blocks_html.push_str(&format!("<pre>{}</pre>", escape_html(&text)));
                     }
                     "li" => {
-                        blocks_html.push_str(&format!("<p class=\"li\">{}</p>", escape_html(&text)));
+                        blocks_html
+                            .push_str(&format!("<p class=\"li\">{}</p>", escape_html(&text)));
                     }
                     _ => {
                         blocks_html.push_str(&format!("<p>{}</p>", escape_html(&text)));
@@ -154,16 +165,16 @@ impl TurboReader {
         let word_count = text_accum.split_whitespace().count();
         let read_minutes = (word_count / 215).max(1);
 
-        let html = reader_shell(
-            &title,
-            &site_name,
-            final_url,
-            &excerpt,
+        let html = reader_shell(&ReaderShell {
+            title: &title,
+            site_name: &site_name,
+            url: final_url,
+            excerpt: &excerpt,
             read_minutes,
             word_count,
-            &images_html,
-            &blocks_html,
-        );
+            images: &images_html,
+            content: &blocks_html,
+        });
 
         TurboDocument {
             final_url: final_url.to_string(),
@@ -180,16 +191,29 @@ impl TurboReader {
     }
 }
 
-fn reader_shell(
-    title: &str,
-    site_name: &str,
-    url: &str,
-    excerpt: &str,
+/// Everything the reader template needs to render a page.
+struct ReaderShell<'a> {
+    title: &'a str,
+    site_name: &'a str,
+    url: &'a str,
+    excerpt: &'a str,
     read_minutes: usize,
     word_count: usize,
-    images: &str,
-    content: &str,
-) -> String {
+    images: &'a str,
+    content: &'a str,
+}
+
+fn reader_shell(page: &ReaderShell<'_>) -> String {
+    let ReaderShell {
+        title,
+        site_name,
+        url,
+        excerpt,
+        read_minutes,
+        word_count,
+        images,
+        content,
+    } = *page;
     let url_js = escape_html(&serde_json::to_string(url).unwrap_or_else(|_| "\"\"".to_string()));
     format!(
         r#"<!doctype html>
@@ -305,7 +329,11 @@ fn meta_content(document: &Html, selector: &str) -> Option<String> {
 }
 
 fn collapse_whitespace(raw: &str) -> String {
-    raw.split_whitespace().collect::<Vec<_>>().join(" ").trim().to_string()
+    raw.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
 }
 
 #[cfg(test)]
@@ -338,8 +366,18 @@ mod tests {
         assert!(doc.blocks >= 5);
         assert!(doc.html.contains("borrow checker"));
         assert!(!doc.html.contains("Copyright"));
-        assert!(!doc.html.contains("<script"));
         assert!(doc.html.contains("Turbo reading"));
+
+        // The extracted article body must never carry page scripts or handlers.
+        let content = doc
+            .html
+            .split_once("<article>")
+            .and_then(|(_, rest)| rest.split_once("</article>"))
+            .map(|(content, _)| content)
+            .expect("reader output contains an article body");
+        assert!(!content.contains("<script"));
+        assert!(!content.contains("onclick="));
+        assert!(!content.contains("<iframe"));
     }
 
     #[test]

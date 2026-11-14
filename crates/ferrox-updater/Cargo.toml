@@ -3,10 +3,12 @@ name = "ferrox-updater"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 ferrox-core.workspace = true
-ferrox-net.workspace = true
 reqwest.workspace = true
 tokio.workspace = true
 semver.workspace = true

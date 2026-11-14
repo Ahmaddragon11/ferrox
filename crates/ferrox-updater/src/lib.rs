@@ -11,7 +11,10 @@ pub use verify::{sha256_hex, signing_payload, verify_sha256, verify_signature};
 use ferrox_core::{Result, UpdateChannel};
 
 /// Fetches the update manifest from the configured URL.
-pub async fn fetch_manifest(client: &reqwest::Client, manifest_url: &str) -> Result<UpdateManifest> {
+pub async fn fetch_manifest(
+    client: &reqwest::Client,
+    manifest_url: &str,
+) -> Result<UpdateManifest> {
     let response = client
         .get(manifest_url)
         .send()
@@ -42,8 +45,11 @@ pub async fn check_for_update(
         return Ok(None);
     };
     let platform = UpdateManifest::current_platform();
-    let asset = manifest.asset_for_platform(&platform).cloned().ok_or_else(|| {
-        ferrox_core::FerroxError::Update(format!("no release asset for platform {platform}"))
-    })?;
+    let asset = manifest
+        .asset_for_platform(&platform)
+        .cloned()
+        .ok_or_else(|| {
+            ferrox_core::FerroxError::Update(format!("no release asset for platform {platform}"))
+        })?;
     Ok(Some((manifest, asset)))
 }

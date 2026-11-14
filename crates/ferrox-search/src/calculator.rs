@@ -49,7 +49,10 @@ pub fn try_evaluate(input: &str) -> Option<String> {
             format!("{}", value.round() as i64)
         } else {
             let formatted = format!("{value:.10}");
-            formatted.trim_end_matches('0').trim_end_matches('.').to_string()
+            formatted
+                .trim_end_matches('0')
+                .trim_end_matches('.')
+                .to_string()
         }
     })
 }
@@ -260,6 +263,9 @@ mod tests {
     #[test]
     fn errors_are_reported() {
         assert_eq!(evaluate("1 + "), Err(CalcError::UnexpectedEnd));
-        assert!(matches!(evaluate("1 & 2"), Err(CalcError::UnexpectedChar('&'))));
+        assert!(matches!(
+            evaluate("1 & 2"),
+            Err(CalcError::UnexpectedChar('&'))
+        ));
     }
 }

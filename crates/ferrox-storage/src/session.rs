@@ -18,7 +18,8 @@ impl StorageDb {
     pub fn save_session(&self, tabs: &[SessionTab]) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction().map_err(map_err)?;
-        tx.execute("DELETE FROM session_tabs", []).map_err(map_err)?;
+        tx.execute("DELETE FROM session_tabs", [])
+            .map_err(map_err)?;
         for tab in tabs {
             tx.execute(
                 "INSERT INTO session_tabs (tab_id, url, title, position, pinned, muted)

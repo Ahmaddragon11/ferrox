@@ -39,18 +39,17 @@ pub fn apply(ctx: &egui::Context) {
     visuals.window_corner_radius = CornerRadius::same(14);
     visuals.menu_corner_radius = CornerRadius::same(12);
     visuals.window_stroke = Stroke::new(1.0, LINE);
-    ctx.set_visuals(visuals);
+    ctx.set_visuals_of(egui::Theme::Dark, visuals);
 
-    let mut style = (*ctx.style()).clone();
+    let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
     style.spacing.item_spacing = Vec2::new(8.0, 6.0);
     style.spacing.button_padding = Vec2::new(9.0, 5.0);
     style.spacing.interact_size = Vec2::new(30.0, 26.0);
     style.spacing.scroll.bar_width = 8.0;
     style.spacing.scroll.floating = true;
-    style.text_styles.insert(
-        TextStyle::Body,
-        FontId::new(13.5, FontFamily::Proportional),
-    );
+    style
+        .text_styles
+        .insert(TextStyle::Body, FontId::new(13.5, FontFamily::Proportional));
     style.text_styles.insert(
         TextStyle::Button,
         FontId::new(13.0, FontFamily::Proportional),
@@ -63,5 +62,5 @@ pub fn apply(ctx: &egui::Context) {
         TextStyle::Monospace,
         FontId::new(12.0, FontFamily::Monospace),
     );
-    ctx.set_style(style);
+    ctx.set_style_of(egui::Theme::Dark, style);
 }

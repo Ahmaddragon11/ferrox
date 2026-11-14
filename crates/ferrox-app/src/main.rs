@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod downloads;
 mod pages;
 
 use crate::app::{AppEvent, FerroxApp, StartupOptions};

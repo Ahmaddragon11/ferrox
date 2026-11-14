@@ -31,7 +31,8 @@ impl DownloadStatus {
         }
     }
 
-    pub fn from_str(raw: &str) -> Self {
+    /// Parses the label that is stored inside the database.
+    pub fn from_label(raw: &str) -> Self {
         match raw {
             "pending" => Self::Pending,
             "in_progress" => Self::InProgress,
@@ -41,6 +42,14 @@ impl DownloadStatus {
             "cancelled" => Self::Cancelled,
             _ => Self::Pending,
         }
+    }
+}
+
+impl std::str::FromStr for DownloadStatus {
+    type Err = ();
+
+    fn from_str(raw: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(Self::from_label(raw))
     }
 }
 
@@ -113,11 +122,38 @@ impl StorageDb {
         Ok(())
     }
 
-    pub fn set_download_status(&self, id: &str, status: DownloadStatus, sha256: Option<&str>) -> Result<()> {
+    /// Stores the expected size of a download once the server reports it.
+    pub fn set_download_total(&self, id: &str, total: u64) -> Result<()> {
+        self.conn()
+            .execute(
+                "UPDATE downloads SET total_bytes = ?2 WHERE id = ?1",
+                rusqlite::params![id, total as i64],
+            )
+            .map_err(map_err)?;
+        Ok(())
+    }
+
+    pub fn set_download_status(
+        &self,
+        id: &str,
+        status: DownloadStatus,
+        sha256: Option<&str>,
+    ) -> Result<()> {
         self.conn()
             .execute(
                 "UPDATE downloads SET status = ?2, sha256 = COALESCE(?3, sha256) WHERE id = ?1",
                 rusqlite::params![id, status.as_str(), sha256],
+            )
+            .map_err(map_err)?;
+        Ok(())
+    }
+
+    /// Stores the checksum of a finished download without touching its state.
+    pub fn set_download_hash(&self, id: &str, sha256: &str) -> Result<()> {
+        self.conn()
+            .execute(
+                "UPDATE downloads SET sha256 = ?2 WHERE id = ?1",
+                rusqlite::params![id, sha256],
             )
             .map_err(map_err)?;
         Ok(())
@@ -139,7 +175,7 @@ impl StorageDb {
                     file_path: row.get(2)?,
                     total_bytes: row.get::<_, i64>(3)? as u64,
                     downloaded_bytes: row.get::<_, i64>(4)? as u64,
-                    status: DownloadStatus::from_str(&row.get::<_, String>(5)?),
+                    status: DownloadStatus::from_label(&row.get::<_, String>(5)?),
                     sha256: row.get(6)?,
                     created_at: parse_datetime(&row.get::<_, String>(7)?),
                 })

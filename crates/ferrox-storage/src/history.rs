@@ -115,7 +115,9 @@ impl StorageDb {
 
     pub fn clear_history(&self) -> Result<()> {
         self.conn()
-            .execute_batch("DELETE FROM history; INSERT INTO history_fts(history_fts) VALUES('rebuild');")
+            .execute_batch(
+                "DELETE FROM history; INSERT INTO history_fts(history_fts) VALUES('rebuild');",
+            )
             .map_err(map_err)?;
         Ok(())
     }
@@ -164,9 +166,12 @@ mod tests {
     #[test]
     fn records_upserts_and_searches_history() {
         let db = StorageDb::open_in_memory().unwrap();
-        db.record_visit("https://rust-lang.org/learn", "Rust Learn").unwrap();
-        db.record_visit("https://rust-lang.org/learn", "Rust Learn").unwrap();
-        db.record_visit("https://docs.rs/serde", "Serde Docs").unwrap();
+        db.record_visit("https://rust-lang.org/learn", "Rust Learn")
+            .unwrap();
+        db.record_visit("https://rust-lang.org/learn", "Rust Learn")
+            .unwrap();
+        db.record_visit("https://docs.rs/serde", "Serde Docs")
+            .unwrap();
 
         assert_eq!(db.history_count().unwrap(), 2);
         let hits = db.search_history("rust", 10).unwrap();

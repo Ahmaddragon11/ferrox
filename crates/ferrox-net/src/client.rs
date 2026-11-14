@@ -46,6 +46,21 @@ impl FastNetClient {
         &self.cache
     }
 
+    /// Asks the server for the size of a resource without downloading it.
+    pub async fn content_length(&self, url: &str) -> Option<u64> {
+        let response = self.client.head(url).send().await.ok()?;
+        if !response.status().is_success() {
+            return None;
+        }
+        response
+            .headers()
+            .get(reqwest::header::CONTENT_LENGTH)?
+            .to_str()
+            .ok()?
+            .parse::<u64>()
+            .ok()
+    }
+
     pub async fn fetch_cached(&self, url: &str, use_cache: bool) -> Result<FetchedResource> {
         if use_cache && let Some(hit) = self.cache.get(url) {
             return Ok(FetchedResource {

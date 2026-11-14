@@ -61,8 +61,9 @@ impl UpdateManifest {
         if self.channel != channel {
             return Ok(None);
         }
-        let current = Version::parse(current_version)
-            .map_err(|e| ferrox_core::FerroxError::Update(format!("invalid current version: {e}")))?;
+        let current = Version::parse(current_version).map_err(|e| {
+            ferrox_core::FerroxError::Update(format!("invalid current version: {e}"))
+        })?;
         let candidate = self.version()?;
         if candidate > current {
             Ok(Some(candidate))
@@ -104,7 +105,9 @@ mod tests {
     fn detects_updates_respecting_channels() {
         let manifest = UpdateManifest::parse(SAMPLE).unwrap();
         assert_eq!(
-            manifest.available_update("1.1.0", UpdateChannel::Stable).unwrap(),
+            manifest
+                .available_update("1.1.0", UpdateChannel::Stable)
+                .unwrap(),
             Some(Version::new(1, 2, 0))
         );
         assert!(

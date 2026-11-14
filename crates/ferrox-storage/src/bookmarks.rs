@@ -191,7 +191,8 @@ mod tests {
         let db = StorageDb::open_in_memory().unwrap();
         db.add_bookmark("https://rust-lang.org", "Rust Language", "Dev")
             .unwrap();
-        db.add_bookmark("https://docs.rs", "Docs.rs", "Dev").unwrap();
+        db.add_bookmark("https://docs.rs", "Docs.rs", "Dev")
+            .unwrap();
 
         assert!(db.is_bookmarked("https://rust-lang.org").unwrap());
         assert_eq!(db.list_bookmarks(Some("Dev")).unwrap().len(), 2);

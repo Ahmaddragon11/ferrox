@@ -29,7 +29,7 @@ impl SearchEngineId {
     }
 
     pub fn search_url(self, query: &str) -> String {
-        let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
+        let encoded = crate::urlenc::encode_query_component(query);
         match self {
             Self::DuckDuckGo => format!("https://duckduckgo.com/?q={encoded}"),
             Self::Google => format!("https://www.google.com/search?q={encoded}"),
@@ -165,10 +165,9 @@ impl FerroxConfig {
     pub fn compute_mode_for_url(&self, raw_url: &str) -> ComputeMode {
         if let Ok(parsed) = url::Url::parse(raw_url)
             && let Some(host) = parsed.host_str()
+            && let Some(mode) = self.per_site_compute_modes.get(host)
         {
-            if let Some(mode) = self.per_site_compute_modes.get(host) {
-                return *mode;
-            }
+            return *mode;
         }
         self.default_compute_mode
     }

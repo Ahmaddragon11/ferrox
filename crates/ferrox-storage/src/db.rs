@@ -148,7 +148,10 @@ mod tests {
             )
             .expect("sqlite version");
         assert!(!version.is_empty());
-        assert!(version.ends_with(":1"), "FTS5 must be compiled in: {version}");
+        assert!(
+            version.ends_with(":1"),
+            "FTS5 must be compiled in: {version}"
+        );
     }
 
     #[test]
@@ -158,6 +161,12 @@ mod tests {
             Some("\"rust\"* AND \"browser\"*".to_string())
         );
         assert_eq!(fts_query("   "), None);
-        assert_eq!(fts_query("a\"b"), Some("\"ab\"*".to_string()));
+        // Quotes and other punctuation act as separators and are never
+        // forwarded to FTS5 verbatim.
+        assert_eq!(fts_query("a\"b"), Some("\"a\"* AND \"b\"*".to_string()));
+        assert_eq!(
+            fts_query("rust-2024"),
+            Some("\"rust\"* AND \"2024\"*".to_string())
+        );
     }
 }

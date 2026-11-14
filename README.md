@@ -19,6 +19,26 @@
 - **Signed Auto-Updater & Release Channels (`ferrox-updater`):**
   - SemVer versioning, `stable` / `beta` / `nightly` channels, `Ed25519` + `SHA-256` verification, and atomic binary replacement (`self-replace`).
 
+## Browser Features
+
+| Feature | How to use it |
+| --- | --- |
+| Find in page | `Ctrl+F`, then `Enter` / `Shift+Enter` to walk through the matches |
+| New / close / restore tab | `Ctrl+T`, `Ctrl+W`, `Ctrl+Shift+T` |
+| Focus the address bar | `Ctrl+L` (also `!bang` shortcuts like `!gh ferrox`) |
+| Zoom | `Ctrl+=`, `Ctrl+-`, `Ctrl+0` (per tab) |
+| Bookmark a page | `Ctrl+D` |
+| Developer tools | `≡ Menu → Developer tools` |
+| View the page source | `≡ Menu → View source` |
+| Pin / mute a tab | Right-click the tab in the strip |
+| Downloads | Automatic — see `ferrox://downloads` for progress, checksum and actions |
+
+## Internal Pages
+
+`ferrox://newtab`, `ferrox://settings`, `ferrox://profiler`, `ferrox://history`,
+`ferrox://bookmarks`, `ferrox://downloads`, `ferrox://updates`,
+`ferrox://view-source?url=…`
+
 ## Build & Run
 
 ```bash

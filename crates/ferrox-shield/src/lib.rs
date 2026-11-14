@@ -222,7 +222,11 @@ mod tests {
             "https://example.com",
             ResourceType::Script,
         );
-        shield.check("https://example.com/style.css", "https://example.com", ResourceType::Stylesheet);
+        shield.check(
+            "https://example.com/style.css",
+            "https://example.com",
+            ResourceType::Stylesheet,
+        );
         let stats = shield.stats();
         assert_eq!(stats.requests_checked, 2);
         assert_eq!(stats.requests_blocked, 1);

@@ -3,4 +3,4 @@
 pub mod chrome;
 pub mod theme;
 
-pub use chrome::{chrome_height, ChromeAction, ChromeState, ChromeTab, SuggestionItem};
+pub use chrome::{ChromeAction, ChromeState, ChromeTab, SuggestionItem, chrome_height};

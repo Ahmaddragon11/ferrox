@@ -6,7 +6,10 @@ use sha2::{Digest, Sha256};
 
 /// Canonical payload that must be signed by the release signing key.
 pub fn signing_payload(asset_url: &str, sha256_hex: &str) -> String {
-    format!("ferrox-update-v1\n{asset_url}\n{}", sha256_hex.to_ascii_lowercase())
+    format!(
+        "ferrox-update-v1\n{asset_url}\n{}",
+        sha256_hex.to_ascii_lowercase()
+    )
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -84,7 +87,9 @@ mod tests {
         let signature = signing.sign(signing_payload(url, &sha).as_bytes());
         let sig_hex = hex::encode(signature.to_bytes());
 
-        assert!(verify_signature(&public_hex, "https://evil.example/x.zip", &sha, &sig_hex).is_err());
+        assert!(
+            verify_signature(&public_hex, "https://evil.example/x.zip", &sha, &sig_hex).is_err()
+        );
         assert!(verify_signature(&public_hex, url, &sha256_hex(b"other"), &sig_hex).is_err());
         assert!(verify_sha256(b"other", &sha).is_err());
     }
