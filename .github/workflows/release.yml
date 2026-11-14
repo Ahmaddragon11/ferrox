@@ -104,13 +104,16 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $nsisUrl = "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.09/nsis-3.09.zip"
+          $nsisUrls = @(
+            "https://pilotfiber.dl.sourceforge.net/project/nsis/NSIS%203/3.09/nsis-3.09.zip",
+            "https://phoenixnap.dl.sourceforge.net/project/nsis/NSIS%203/3.09/nsis-3.09.zip"
+          )
           $nsisZip = Join-Path $env:RUNNER_TEMP "nsis-3.09.zip"
           $nsisRoot = Join-Path $env:RUNNER_TEMP "nsis-3.09"
           $expectedSha256 = "f5dc52eef1f3884230520199bac6f36b82d643d86b003ce51bd24b05c6ba7c91"
           $downloaded = $false
 
-          for ($attempt = 1; $attempt -le 3; $attempt++) {
+          foreach ($nsisUrl in $nsisUrls) {
             try {
               Invoke-WebRequest -Uri $nsisUrl -OutFile $nsisZip
               $actualSha256 = (Get-FileHash $nsisZip -Algorithm SHA256).Hash
@@ -121,12 +124,10 @@ jobs:
               break
             } catch {
               Remove-Item $nsisZip -Force -ErrorAction SilentlyContinue
-              if ($attempt -eq 3) { throw "Could not download a verified NSIS archive: $_" }
-              Write-Warning "NSIS download attempt $attempt failed: $_"
-              Start-Sleep -Seconds (2 * $attempt)
+              Write-Warning "NSIS mirror $nsisUrl failed: $_"
             }
           }
-          if (!$downloaded) { throw "NSIS archive was not downloaded" }
+          if (!$downloaded) { throw "Could not download a verified NSIS archive from any mirror" }
 
           Expand-Archive -Path $nsisZip -DestinationPath $env:RUNNER_TEMP -Force
           $makensisPath = Join-Path $nsisRoot "Bin\makensis.exe"
