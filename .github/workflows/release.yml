@@ -224,12 +224,12 @@ jobs:
             -e "s|@WEBVIEW2_PATH@|${webview2_path}|g" \
             -e "s|@ICON_PATH@|${icon_path}|g" \
             .github/installer/ferrox.nsi > installer-work/ferrox-installer.nsi
-          makensis -V1 installer-work/ferrox-installer.nsi
-          if [[ ! -s "$installer_name" ]]; then
+          (cd installer-work && makensis -V1 ferrox-installer.nsi)
+          if [[ ! -s "installer-work/$installer_name" ]]; then
             echo "NSIS did not create $installer_name" >&2
             exit 1
           fi
-          mv "$installer_name" artifacts/windows/
+          mv "installer-work/$installer_name" artifacts/windows/
           (cd artifacts/windows && sha256sum "$installer_name" > "$installer_name.sha256")
 
       - name: Verify Windows installer
