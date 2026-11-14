@@ -54,6 +54,30 @@ ferrox --turbo https://example.com
 ferrox --check-update
 ```
 
+## Download & Install
+
+**Windows (recommended):** Download `ferrox-windows-x86_64.zip`, extract it, and run `ferrox.exe`. No installer is needed — Ferrox is a portable standalone browser.
+
+1. Download the latest `ferrox-windows-x86_64.zip` from the [Releases page](https://github.com/Ahmaddragon11/ferrox/releases).
+2. Verify the checksum:
+   ```powershell
+   CertUtil -hashfile ferrox-windows-x86_64.zip SHA256
+   # compare with the value in ferrox-windows-x86_64.zip.sha256
+   ```
+3. Extract the ZIP to any folder (e.g. `C:\Apps\Ferrox`).
+4. Double-click `ferrox.exe` to launch.
+
+For a persistent install, copy `ferrox.exe` to `C:\Program Files\Ferrox\`.
+
+**Linux:** Download `ferrox-linux-x86_64.tar.gz`, extract it, and run `./ferrox`.
+
+```bash
+wget https://github.com/Ahmaddragon11/ferrox/releases/download/v<VERSION>/ferrox-linux-x86_64.tar.gz
+tar -xzf ferrox-linux-x86_64.tar.gz
+cd ferrox-linux-x86_64
+./ferrox
+```
+
 ## License
 
 Dual-licensed under **MIT** (`LICENSE-MIT`) or **Apache-2.0** (`LICENSE-APACHE`).
