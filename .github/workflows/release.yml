@@ -104,22 +104,39 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue
-          if (!$makensis) {
-            Write-Host "Installing NSIS from SourceForge..."
-            $nsisUrl = "https://sourceforge.net/projects/nsis/files/NSIS%203/3.09/nsis-3.09-setup.exe/download"
-            $nsisInstaller = "$env:TEMP\nsis-setup.exe"
-            Invoke-WebRequest -Uri $nsisUrl -OutFile $nsisInstaller
-            $process = Start-Process -FilePath $nsisInstaller -ArgumentList "/S" -Wait -PassThru
-            if ($process.ExitCode -ne 0) { throw "NSIS setup failed (exit code $($process.ExitCode))" }
+          $nsisUrl = "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.09/nsis-3.09.zip"
+          $nsisZip = Join-Path $env:RUNNER_TEMP "nsis-3.09.zip"
+          $nsisRoot = Join-Path $env:RUNNER_TEMP "nsis-3.09"
+          $expectedSha256 = "f5dc52eef1f3884230520199bac6f36b82d643d86b003ce51bd24b05c6ba7c91"
+          $downloaded = $false
+
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            try {
+              Invoke-WebRequest -Uri $nsisUrl -OutFile $nsisZip
+              $actualSha256 = (Get-FileHash $nsisZip -Algorithm SHA256).Hash
+              if ($actualSha256 -ine $expectedSha256) {
+                throw "NSIS archive SHA-256 mismatch (got $actualSha256)"
+              }
+              $downloaded = $true
+              break
+            } catch {
+              Remove-Item $nsisZip -Force -ErrorAction SilentlyContinue
+              if ($attempt -eq 3) { throw "Could not download a verified NSIS archive: $_" }
+              Write-Warning "NSIS download attempt $attempt failed: $_"
+              Start-Sleep -Seconds (2 * $attempt)
+            }
           }
-          $candidates = @(
-            (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source,
-            "$env:ProgramFiles\NSIS\makensis.exe",
-            "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
-          ) | Where-Object { $_ -and (Test-Path $_) }
-          if (!$candidates) { throw "NSIS installation completed but makensis.exe could not be found" }
-          Add-Content -Path $env:GITHUB_ENV -Value "MAKENSIS_PATH=$($candidates[0])"
+          if (!$downloaded) { throw "NSIS archive was not downloaded" }
+
+          Expand-Archive -Path $nsisZip -DestinationPath $env:RUNNER_TEMP -Force
+          $makensisPath = Join-Path $nsisRoot "Bin\makensis.exe"
+          if (!(Test-Path $makensisPath)) { throw "NSIS archive is missing Bin\makensis.exe" }
+          if (!(Test-Path (Join-Path $nsisRoot "Stubs"))) { throw "NSIS archive is missing its Stubs directory" }
+          $env:NSISDIR = $nsisRoot
+          Add-Content -Path $env:GITHUB_ENV -Value "MAKENSIS_PATH=$makensisPath"
+          Add-Content -Path $env:GITHUB_ENV -Value "NSISDIR=$nsisRoot"
+          & $makensisPath "/VERSION"
+          if ($LASTEXITCODE -ne 0) { throw "NSIS compiler self-check failed (exit code $LASTEXITCODE)" }
 
       - name: Prepare NSIS installer script
         shell: pwsh
@@ -156,7 +173,7 @@ jobs:
           $installerName = "Ferrox-Setup-${version}-x86_64.exe"
 
           Write-Host "Building NSIS installer: $installerName"
-          if (!(Test-Path $env:MAKENSIS_PATH)) { throw "makensis.exe was not installed" }
+          if (!(Test-Path $env:MAKENSIS_PATH)) { throw "Portable NSIS compiler was not extracted" }
           & $env:MAKENSIS_PATH "/V1" "ferrox-installer.nsi"
           if ($LASTEXITCODE -ne 0) { throw "NSIS failed to build the installer (exit code $LASTEXITCODE)" }
           if (!(Test-Path $installerName)) { throw "NSIS did not create $installerName" }
